@@ -9,5 +9,6 @@
 - error.invalid-sequence.example.json
 
 注意:
+
 - 例の timestamp は RFC3339 UTC を使用しています。
 - sequence は送信方向ごとに単調増加する前提です。

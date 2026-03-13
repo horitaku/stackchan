@@ -1,0 +1,74 @@
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Firmware local settings and secrets
+firmware/**/secrets.h
+firmware/**/secrets_*.h
+!firmware/**/secrets.example.h
+!firmware/**/secrets_*.example.h
+firmware/**/platformio.ini.local
+firmware/**/platformio.local.ini
+firmware/**/platformio_override.ini
+firmware/**/.env
+firmware/**/.env.*
+!firmware/**/.env.example
+!firmware/**/.env.*.example
+
+# Local secret/config files
+*.local
+*.secret
+*.secrets
+secrets/
+
+# Keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Cloud credential files
+*credentials*.json
+*service-account*.json
+*service_account*.json
+
+# Python and tool caches
+.mypy_cache/
+
+# Build outputs and binaries
+bin/
+build/
+dist/
+out/
+tmp/
+
+# Firmware build outputs
+firmware/**/.pio/
+firmware/**/.pioenvs/
+firmware/**/.piolibdeps/
+firmware/**/build/
+
+# Web UI build outputs and dependencies
+webui/node_modules/
+webui/.svelte-kit/
+webui/build/
+webui/dist/
+
+# Compiled binaries and firmware images
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.o
+*.obj
+*.out
+*.bin
+*.elf
+*.hex
+*.map

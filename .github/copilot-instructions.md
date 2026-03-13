@@ -278,6 +278,8 @@ tools/
 ```txt
 infra/
 ├ docker/
+│  ├ Dockerfile          # マルチステージビルド定義
+│  └ docker-compose.yml  # サービス起動オーケストレーション
 ├ dev/
 ├ production/
 └ terraform/
@@ -287,6 +289,21 @@ infra/
 - PostgreSQL は docker-compose で Go サービスと同梱して起動する
 - DB 接続情報は環境変数で管理し、リポジトリにパスワード等を含めない
 - マイグレーション管理ツール（例: golang-migrate）を採用し、スキーマ変更を追跡する
+
+#### Dockerfile マルチステージビルド構成
+
+本番イメージは 3 ステージ構成の Dockerfile で一貫してビルドする。
+docker-compose はこの Dockerfile を呼び出すオーケストレーターとして機能する。
+
+| ステージ | ベースイメージ | 役割 |
+|----------|---------------|------|
+| Stage 1 (webui-builder) | `node:lts-alpine` | Svelte を `npm run build` し `dist/` を生成 |
+| Stage 2 (server-builder) | `golang:alpine` | Go バイナリをビルドし、Stage 1 の `dist/` をコピー |
+| Stage 3 (runtime) | `gcr.io/distroless/static` または `alpine` | Stage 2 のバイナリのみを含む最小実行イメージ |
+
+- Stage 1 → Stage 2 は `COPY --from=webui-builder` で静的ファイルを受け渡す
+- Go バイナリは `embed.FS` で静的ファイルを埋め込み、外部ファイル依存をなくす
+- 最終イメージにはソースコード・ビルドキャッシュを含めない
 
 ### 8.7 docs / examples / .github
 
@@ -308,7 +325,9 @@ examples/
 ### 8.8 WebUI 運用ルール
 
 - 開発時は Svelte 開発サーバーと Go バックエンドを分離起動してよい
-- 本番相当では Svelte を static build し、Go が `webui/dist` を配信する
+- 本番相当ビルドは Dockerfile マルチステージビルドで完結させる（8.6 参照）
+  - `docker-compose build` 一発で Svelte ビルド → Go ビルド → 最小イメージ生成まで完了する
+  - Go は `embed.FS` で `webui/dist` を埋め込んで配信する
 - 設定値は API 経由で保存・更新し、UI から直接ファイル書き換えしない
 - UI からテスト実行した結果（成功/失敗、レイテンシ、エラー）は構造化して保持する
 
@@ -345,6 +364,7 @@ examples/
 7. 破壊的変更を提案する場合は、移行手順を必ず示す
 8. WebUI は「Svelte static build を Go で配信」の構成を前提に提案する
 9. WebUI の設定操作とテスト実行は API 化し、画面と処理責務を分離する
+10. Dockerfile はマルチステージビルド（Stage1: Node.js/Svelte → Stage2: Go + dist コピー → Stage3: 最小ランタイム）で構成し、`embed.FS` で静的ファイルを埋め込む
 
 ## 11. 今後の拡張候補（メモ）
 

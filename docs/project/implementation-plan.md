@@ -65,6 +65,7 @@
   - audio.end
 - JSON Schema とペイロード例を追加します。
 - 将来拡張に向けた互換性ルールを記録します。
+- 実行タスクは docs/project/phase01-tasklist.md で管理します。
 
 ### フェーズ 2. サーバースケルトン
 

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackchan.local/protocol/websocket/schemas/session.welcome.schema.json",
+  "allOf": [
+    {
+      "$ref": "./envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "session.welcome"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["accepted", "server_time"],
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "server_time": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "heartbeat_interval_ms": {
+              "type": "integer",
+              "minimum": 1000
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

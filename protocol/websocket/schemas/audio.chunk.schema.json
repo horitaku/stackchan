@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackchan.local/protocol/websocket/schemas/audio.chunk.schema.json",
+  "allOf": [
+    {
+      "$ref": "./envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "audio.chunk"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "stream_id",
+            "chunk_index",
+            "codec",
+            "sample_rate_hz",
+            "frame_duration_ms",
+            "channel_count",
+            "data_base64"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "stream_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "chunk_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "codec": {
+              "type": "string",
+              "enum": ["opus"]
+            },
+            "sample_rate_hz": {
+              "type": "integer",
+              "enum": [16000, 24000, 48000]
+            },
+            "frame_duration_ms": {
+              "type": "integer",
+              "enum": [10, 20, 40, 60]
+            },
+            "channel_count": {
+              "type": "integer",
+              "enum": [1, 2]
+            },
+            "data_base64": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  ]
+}

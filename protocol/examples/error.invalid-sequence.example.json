@@ -1,0 +1,14 @@
+{
+  "type": "error",
+  "timestamp": "2026-03-14T12:00:02Z",
+  "session_id": "sess_01HXYZABCDEF",
+  "sequence": 2,
+  "version": "1.0",
+  "payload": {
+    "code": "invalid_sequence",
+    "message": "sequence must be monotonic in this direction",
+    "retryable": false,
+    "request_type": "audio.chunk",
+    "request_sequence": 2
+  }
+}

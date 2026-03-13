@@ -1,0 +1,15 @@
+{
+  "type": "session.hello",
+  "timestamp": "2026-03-14T12:00:00Z",
+  "session_id": "",
+  "sequence": 1,
+  "version": "1.0",
+  "payload": {
+    "device_id": "stackchan-cores3-01",
+    "client_type": "firmware",
+    "protocol_capabilities": {
+      "audio_chunk": true,
+      "audio_end": true
+    }
+  }
+}

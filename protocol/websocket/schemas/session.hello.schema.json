@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackchan.local/protocol/websocket/schemas/session.hello.schema.json",
+  "allOf": [
+    {
+      "$ref": "./envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "session.hello"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["device_id", "client_type"],
+          "additionalProperties": false,
+          "properties": {
+            "device_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "client_type": {
+              "type": "string",
+              "enum": ["firmware", "test_harness"]
+            },
+            "protocol_capabilities": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "audio_chunk": { "type": "boolean" },
+                "audio_end": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

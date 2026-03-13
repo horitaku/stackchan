@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackchan.local/protocol/websocket/schemas/audio.end.schema.json",
+  "allOf": [
+    {
+      "$ref": "./envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "audio.end"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["stream_id", "final_chunk_index"],
+          "additionalProperties": false,
+          "properties": {
+            "stream_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "final_chunk_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reason": {
+              "type": "string",
+              "enum": ["normal", "cancel", "timeout", "error"]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

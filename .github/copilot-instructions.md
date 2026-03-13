@@ -191,7 +191,7 @@ firmware/
 
 #### 8.1.1 必要な環境変数一覧（firmware）
 
-デバイス側（M5Stack / Stack-chan runtime）で利用する設定値を以下に定義する。Wi-Fi や認証情報は機密情報として扱い、平文でのコミットを禁止する。
+デバイス側（M5Stack / Stack-chan runtime）で利用する設定値を以下に定義する。ここでいう「環境変数」はサーバープロセスの `.env` を意味しない。firmware ではビルド時設定値として扱い、PlatformIO の `build_flags`、`platformio.ini` から参照するローカル設定ファイル、または git 管理外の `include/secrets.h` のようなヘッダで注入する。Wi-Fi や認証情報は機密情報として扱い、平文でのコミットを禁止する。
 
 | 変数名 | 必須 | 用途 | 例 |
 |--------|------|------|----|
@@ -209,8 +209,10 @@ firmware/
 | `FW_TIMEZONE` | 任意 | タイムゾーン設定 | `Asia/Tokyo` |
 
 - 運用ルール
-	- firmware 用の設定は `.env.firmware`（ローカル専用）で管理し、git 管理対象に含めない
-	- 共有用には `.env.firmware.example` を配置し、実値ではなくダミー値のみ記載する
+	- M5Stack firmware は `.env` を直接読み込む前提にしない
+	- firmware 用の設定は `platformio.ini` からローカル専用ファイルを `extra_configs` で読み込む方式、または git 管理外の `include/secrets.h` / `include/secrets_local.h` で管理する
+	- 共有用には `platformio.ini.example`、`include/secrets.example.h` などのテンプレートを配置し、実値ではなくダミー値のみ記載する
+	- CI では PlatformIO のビルド引数やシークレット注入で同じ設定名を渡せる構成を優先する
 	- `FW_WIFI_PASSWORD`、`FW_WS_TOKEN` はログ出力禁止（マスク必須）とする
 
 ### 8.2 server

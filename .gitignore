@@ -12,10 +12,6 @@ firmware/**/secrets_*.h
 firmware/**/platformio.ini.local
 firmware/**/platformio.local.ini
 firmware/**/platformio_override.ini
-firmware/**/.env
-firmware/**/.env.*
-!firmware/**/.env.example
-!firmware/**/.env.*.example
 
 # Local secret/config files
 *.local

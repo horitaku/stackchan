@@ -1,9 +1,30 @@
 # Stackchan Rebuild
 
-Stackchan 再構築プロジェクトのルートリポジトリです。
-本リポジトリは Protocol First と Thin Vertical Slices に基づいて、firmware と server を段階的に統合します。
+ちいさなボディに、でっかい未来。
+このリポジトリは、Stackchan をゼロベースで再構築していくためのホームです。
 
-## Top-level Directories
+かわいく、しゃべって、うなずいて、つながっていく。
+そんな「一緒に暮らしたくなるロボット体験」を、長く育てられる設計で作っていきます。
+
+## このプロジェクトで大事にしていること
+
+- Protocol First
+  - 先に通信契約を決めて、firmware と server の手戻りを減らします。
+- Thin Vertical Slices
+  - 小さく動く縦スライスを積み重ねて、着実に前進します。
+- Interface-First Provider Design
+  - STT、LLM、TTS は差し替え可能にして、将来の選択肢を残します。
+- Observability from the Start
+  - 最初からログ・メトリクス・相関 ID を扱って、運用で困らない土台にします。
+
+## いま目指している体験
+
+- 音声で自然に会話できる
+- 表情やリップシンクで「話している感じ」が出る
+- 接続が切れても、しなやかに再接続できる
+- WebUI で設定・診断・疎通確認ができる
+
+## ディレクトリ構成
 
 - `firmware`: M5Stack 実行時環境とデバイス I/O
 - `server`: Go + Gin の API/WebSocket サーバー
@@ -14,18 +35,66 @@ Stackchan 再構築プロジェクトのルートリポジトリです。
 - `examples`: 最小構成のサンプル
 - `docs`: 設計、計画、運用ドキュメント
 
-## Initial Setup
+## クイックスタート
 
-1. リポジトリの構成を確認します。
+1. リポジトリ構成を確認する
    - `Get-ChildItem -Name`
-2. server 用設定を作成します。
+2. server 用設定を作る
    - `Copy-Item .env.example .env`
-3. firmware 用設定を作成します。
+3. firmware 用設定を作る
    - `Copy-Item firmware/platformio.ini.example firmware/platformio.ini.local`
    - `Copy-Item firmware/include/secrets.example.h firmware/include/secrets.h`
-4. 機密情報の扱いは `docs/project/secrets-operations.md` に従います。
+4. 機密情報の扱いを確認する
+   - `Get-Content docs/project/secrets-operations.md`
 
-## Verification
+## 進捗の見かた
 
-- タスク進捗確認: `Get-Content docs/project/phase00-tasklist.md`
-- 計画確認: `Get-Content docs/project/implementation-plan.md`
+- 実装計画: `Get-Content docs/project/implementation-plan.md`
+- フェーズ 0 タスク: `Get-Content docs/project/phase00-tasklist.md`
+
+## ロードマップの雰囲気
+
+現在は基盤づくりのフェーズを進めながら、次を段階的に育てていく予定です。
+
+- protocol v0 の定義と互換性ルール整備
+- hello/welcome を起点にしたセッション確立
+- audio.chunk / audio.end を扱う最小音声パス
+- provider 境界の整備とモック駆動の実装
+- WebUI での可視化と診断導線の強化
+
+## 参加してくれる方へ
+
+このプロジェクトは、かわいさと堅牢さを両立するチャレンジです。
+小さな改善、ドキュメント修正、アイデア提案、どれも大歓迎です。
+
+まずは `docs/project` を読むところから、一緒にはじめてもらえるとうれしいです。
+
+## 謝辞
+
+このプロジェクトは、先人の素晴らしい取り組みに強く影響を受けています。
+
+- 本家 Stackchan を生み出し、コミュニティを牽引してくださっている ししかわさん
+  - GitHub: https://github.com/stack-chan/stack-chan
+  - X: https://x.com/stack_chan
+  - 記事: https://hackaday.io/project/181344-stack-chan-javascript-driven-super-kawaii-robot
+- Stackchan の土台となるデバイス/エコシステムを提供してくださっている M5Stack社
+  - 公式サイト: https://m5stack.com/
+  - GitHub: https://github.com/m5stack
+  - 謝辞内容: M5Stack シリーズと周辺エコシステムが、Stackchan 開発と検証の実装基盤として大きく貢献しています。
+
+あわせて、以下の関連リポジトリとメンテナの皆さまにも感謝します。
+
+- stackchan-atama
+  - リポジトリ: https://github.com/karaage0703/stackchan-atama
+  - メンテナ: karaage0703さん
+  - 謝辞内容: Arduino フレームワークでの実装資産が、派生開発や比較検証の土台として大きな助けになっています。
+- m5stack-avatar
+  - リポジトリ: https://github.com/stack-chan/m5stack-avatar
+  - メンテナ: mongonta0716さんをはじめとするメンテナの皆さま
+  - 謝辞内容: アバター描画ライブラリとして、表情表現や顔表示まわりの設計・実装を進める上で重要な基盤になっています。
+- AI_StackChan_Ex
+  - リポジトリ: https://github.com/ronron-gh/AI_StackChan_Ex
+  - メンテナ: robo8080さん（原点となる実装と知見共有）、ronron-ghさん（機能拡張と継続メンテナンス）
+  - 謝辞内容: AI サービス連携、YAML ベース設定、Realtime API 活用など、実運用に近い知見が本プロジェクトの設計検討に大きく寄与しています。
+
+あらためて、心から感謝します。

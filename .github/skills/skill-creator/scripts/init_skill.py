@@ -105,7 +105,8 @@ EXAMPLE_REFERENCE = """# 参照資料: {skill_title}
 EXAMPLE_ASSET = """# Example Asset File
 
 This placeholder represents where asset files would be stored.
-Replace with actual asset files (templates, images, fonts, etc.) or delete if not needed.
+Replace with actual asset files (templates, images, fonts, etc.)
+or delete if not needed.
 
 Asset files are NOT intended to be loaded into context, but rather used within
 the output AIエージェント produces.
@@ -157,19 +158,21 @@ def init_skill(skill_name: str, path: str) -> Path | None:
     try:
         skill_dir.mkdir(parents=True, exist_ok=False)
         print(f"✅ Created skill directory: {skill_dir}")
-    except Exception as e:
+    except OSError as e:
         print(f"❌ Error creating directory: {e}")
         return None
 
     # Create SKILL.md from template
     skill_title = title_case_skill_name(skill_name)
-    skill_content = SKILL_TEMPLATE.format(skill_name=skill_name, skill_title=skill_title)
+    skill_content = SKILL_TEMPLATE.format(
+        skill_name=skill_name, skill_title=skill_title
+    )
 
     skill_md_path = skill_dir / "SKILL.md"
     try:
         skill_md_path.write_text(skill_content, encoding="utf-8")
         print("✅ Created SKILL.md")
-    except Exception as e:
+    except OSError as e:
         print(f"❌ Error creating SKILL.md: {e}")
         return None
 
@@ -179,7 +182,10 @@ def init_skill(skill_name: str, path: str) -> Path | None:
         scripts_dir = skill_dir / "scripts"
         scripts_dir.mkdir(exist_ok=True)
         example_script = scripts_dir / "example.py"
-        example_script.write_text(EXAMPLE_SCRIPT.format(skill_name=skill_name), encoding="utf-8")
+        example_script.write_text(
+            EXAMPLE_SCRIPT.format(skill_name=skill_name),
+            encoding="utf-8",
+        )
         example_script.chmod(0o755)
         print("✅ Created scripts/example.py")
 
@@ -187,7 +193,10 @@ def init_skill(skill_name: str, path: str) -> Path | None:
         references_dir = skill_dir / "references"
         references_dir.mkdir(exist_ok=True)
         example_reference = references_dir / "api_reference.md"
-        example_reference.write_text(EXAMPLE_REFERENCE.format(skill_title=skill_title), encoding="utf-8")
+        example_reference.write_text(
+            EXAMPLE_REFERENCE.format(skill_title=skill_title),
+            encoding="utf-8",
+        )
         print("✅ Created references/api_reference.md")
 
         # Create assets/ directory with example asset placeholder
@@ -196,21 +205,24 @@ def init_skill(skill_name: str, path: str) -> Path | None:
         example_asset = assets_dir / "example_asset.txt"
         example_asset.write_text(EXAMPLE_ASSET, encoding="utf-8")
         print("✅ Created assets/example_asset.txt")
-    except Exception as e:
+    except OSError as e:
         print(f"❌ Error creating resource directories: {e}")
         return None
 
     # Print next steps
     print(f"\n✅ Skill '{skill_name}' initialized successfully at {skill_dir}")
     print("\nNext steps:")
-    print("1. Edit SKILL.md to complete the TODO items and update the description")
-    print("2. Customize or delete the example files in scripts/, references/, and assets/")
+    print("1. Edit SKILL.md to complete the TODO items"
+          " and update the description")
+    print("2. Customize or delete the example files in"
+          " scripts/, references/, and assets/")
     print("3. Run the validator when ready to check the skill structure")
 
     return skill_dir
 
 
 def main() -> None:
+    """Parse command-line arguments and invoke init_skill."""
     if len(sys.argv) < 4 or sys.argv[2] != "--path":
         print("Usage: init_skill.py <skill-name> --path <path>")
         print("\nSkill name requirements:")

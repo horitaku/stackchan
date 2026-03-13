@@ -37,7 +37,11 @@ def _remove_base_indent(lines: list[str]) -> list[str]:
         for line in lines:
             if line.strip():  # Non-empty line
                 # Remove base indent, preserve relative indent
-                processed.append(line[base_indent:] if len(line) >= base_indent else line)
+                processed.append(
+                    line[base_indent:]
+                    if len(line) >= base_indent
+                    else line
+                )
             else:  # Empty line
                 processed.append("")
         return processed
@@ -129,11 +133,14 @@ def _validate_frontmatter(content: str) -> tuple[bool, str | dict]:
 
 def _validate_properties(frontmatter: dict) -> tuple[bool, str]:
     """Validate frontmatter properties."""
-    allowed_properties = {"name", "description", "license", "allowed-tools", "metadata"}
+    allowed_properties = {
+        "name", "description", "license", "allowed-tools", "metadata"
+    }
     unexpected_keys = set(frontmatter.keys()) - allowed_properties
     if unexpected_keys:
         return False, (
-            f"Unexpected key(s) in SKILL.md frontmatter: {', '.join(sorted(unexpected_keys))}. "
+            "Unexpected key(s) in SKILL.md frontmatter: "
+            f"{', '.join(sorted(unexpected_keys))}. "
             f"Allowed properties are: {', '.join(sorted(allowed_properties))}"
         )
     return True, ""
@@ -150,11 +157,20 @@ def _validate_name(frontmatter: dict) -> tuple[bool, str]:
     name = name.strip()
     if name:
         if not re.match(r"^[a-z0-9-]+$", name):
-            return False, f"Name '{name}' should be hyphen-case (lowercase letters, digits, and hyphens only)"
+            return False, (
+                f"Name '{name}' should be hyphen-case "
+                "(lowercase letters, digits, and hyphens only)"
+            )
         if name.startswith("-") or name.endswith("-") or "--" in name:
-            return False, f"Name '{name}' cannot start/end with hyphen or contain consecutive hyphens"
+            return False, (
+                f"Name '{name}' cannot start/end with hyphen "
+                "or contain consecutive hyphens"
+            )
         if len(name) > 64:
-            return False, f"Name is too long ({len(name)} characters). Maximum is 64 characters."
+            return False, (
+                f"Name is too long ({len(name)} characters). "
+                "Maximum is 64 characters."
+            )
     return True, ""
 
 
@@ -165,46 +181,57 @@ def _validate_description(frontmatter: dict) -> tuple[bool, str]:
 
     description = frontmatter.get("description", "")
     if not isinstance(description, str):
-        return False, f"Description must be a string, got {type(description).__name__}"
+        return False, (
+            "Description must be a string, "
+            f"got {type(description).__name__}"
+        )
     description = description.strip()
     if description:
         if "<" in description or ">" in description:
             return False, "Description cannot contain angle brackets (< or >)"
         if len(description) > 1024:
-            return False, f"Description is too long ({len(description)} characters). Maximum is 1024 characters."
+            return False, (
+                f"Description is too long ({len(description)} characters). "
+                "Maximum is 1024 characters."
+            )
     return True, ""
 
 
 def validate_skill(skill_path: str) -> tuple[bool, str]:
     """Basic validation of a skill"""
-    skill_path = Path(skill_path)
+    skill_dir = Path(skill_path)
 
     # Check SKILL.md exists
-    skill_md = skill_path / "SKILL.md"
+    skill_md = skill_dir / "SKILL.md"
     if not skill_md.exists():
         return False, "SKILL.md not found"
 
     # Read and validate frontmatter
     content = skill_md.read_text(encoding="utf-8")
-    valid, result = _validate_frontmatter(content)
-    if not valid:
-        return False, result
+    ok, result = _validate_frontmatter(content)
+    if not ok:
+        if isinstance(result, str):
+            return False, result
+        return False, "Invalid frontmatter payload"
+
+    if not isinstance(result, dict):
+        return False, "Invalid frontmatter payload"
 
     frontmatter = result
 
     # Validate properties
-    valid, message = _validate_properties(frontmatter)
-    if not valid:
+    ok, message = _validate_properties(frontmatter)
+    if not ok:
         return False, message
 
     # Validate name
-    valid, message = _validate_name(frontmatter)
-    if not valid:
+    ok, message = _validate_name(frontmatter)
+    if not ok:
         return False, message
 
     # Validate description
-    valid, message = _validate_description(frontmatter)
-    if not valid:
+    ok, message = _validate_description(frontmatter)
+    if not ok:
         return False, message
 
     return True, "Skill is valid!"
@@ -212,9 +239,9 @@ def validate_skill(skill_path: str) -> tuple[bool, str]:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python .github/skills/skill-creator/scripts/quick_validate.py <skill_directory>")
+        print("Usage: quick_validate.py <skill_directory>")
         sys.exit(1)
 
-    valid, message = validate_skill(sys.argv[1])
-    print(message)
+    valid, cli_message = validate_skill(sys.argv[1])
+    print(cli_message)
     sys.exit(0 if valid else 1)

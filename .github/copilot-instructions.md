@@ -338,6 +338,21 @@ infra/
 	- 共有用には `.env.example` を配置し、ダミー値のみ記載する
 	- 本番環境ではシークレットマネージャーまたは CI/CD の secret 機能から注入する
 
+#### 8.6.2 DB設計指針（PostgreSQL）
+
+- 永続化対象は `sessions`、`utterances`、`conversation_events`、`runtime_metrics`、`system_settings` を基本とする
+- 機密情報（APIキー、Wi-Fiパスワード、アクセストークン等）は DB に保存しない
+- 全主要テーブルに `id`、`created_at`、`updated_at` を持たせ、削除方針は `deleted_at` の有無で明示する
+- 相関追跡のため、会話系テーブルには `session_id` と `request_id` を保持する
+- 会話イベントは `conversation_events(session_id, sequence)` で順序整合性を保証する
+- 命名は `snake_case` で統一し、外部キー列は `xxx_id` の形式を採用する
+- 制約は `NOT NULL`、`UNIQUE`、`CHECK`、外部キーを適切に設定し、アプリ側検証に依存しすぎない
+- インデックスは実クエリ起点で設計し、導入時に `EXPLAIN ANALYZE` で性能を確認する
+- スキーマ変更は `golang-migrate` で管理し、`up/down` の両方を必須とする
+- 破壊的変更は「追加 -> データ移行 -> 旧列削除」の段階移行で実施する
+- 保持期間と削除ポリシー（物理削除/論理削除）をテーブル種別ごとに定義する
+- 音声データ本体は原則オブジェクトストレージで管理し、DB にはメタデータのみ保存する
+
 #### Dockerfile マルチステージビルド構成
 
 本番イメージは 3 ステージ構成の Dockerfile で一貫してビルドする。

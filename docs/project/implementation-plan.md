@@ -52,6 +52,7 @@
 - 推奨トップレベル構成を作成します: firmware、server、protocol、providers、infra、docs、tools、examples。
 - ignore ルールとローカル設定テンプレートを整備します。
 - 共有サンプルとローカル専用ファイルの配置方針を決定します。
+- 実行タスクは docs/project/phase00-tasklist.md で管理します。
 
 ### フェーズ 1. プロトコル v0
 

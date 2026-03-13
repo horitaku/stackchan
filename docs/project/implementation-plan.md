@@ -73,6 +73,7 @@
 - Gin ベースの HTTP と WebSocket ブートストラップを追加します。
 - セッション生成と hello/welcome 振る舞いを実装します。
 - 構造化ログとリクエスト相関を導入します。
+- 実行タスクは docs/project/phase02-tasklist.md で管理します。
 
 ### フェーズ 3. Provider 境界
 

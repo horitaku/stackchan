@@ -189,6 +189,30 @@ firmware/
 - 重要ルール
   - firmware に AI オーケストレーションロジックを持ち込まない
 
+#### 8.1.1 必要な環境変数一覧（firmware）
+
+デバイス側（M5Stack / Stack-chan runtime）で利用する設定値を以下に定義する。Wi-Fi や認証情報は機密情報として扱い、平文でのコミットを禁止する。
+
+| 変数名 | 必須 | 用途 | 例 |
+|--------|------|------|----|
+| `FW_DEVICE_ID` | 必須 | デバイス識別子（接続時の識別） | `stackchan-cores3-01` |
+| `FW_WS_URL` | 必須 | 接続先 WebSocket URL | `ws://192.168.1.10:8080/ws` |
+| `FW_WS_TOKEN` | 任意 | WebSocket 認証トークン（採用時） | `replace-with-token` |
+| `FW_WIFI_SSID` | 必須 | Wi-Fi SSID | `MyHomeWiFi` |
+| `FW_WIFI_PASSWORD` | 必須 | Wi-Fi パスワード | `change-me` |
+| `FW_AUDIO_SAMPLE_RATE` | 任意 | 収音/再生サンプルレート（Hz） | `16000` |
+| `FW_AUDIO_FRAME_MS` | 任意 | 音声フレーム長（ms） | `20` |
+| `FW_OPUS_BITRATE` | 任意 | Opus ビットレート（bps） | `24000` |
+| `FW_LOG_LEVEL` | 任意 | firmware ログ出力レベル | `info` |
+| `FW_RECONNECT_BASE_MS` | 任意 | 再接続待機の初期値（ms） | `500` |
+| `FW_RECONNECT_MAX_MS` | 任意 | 再接続待機の最大値（ms） | `10000` |
+| `FW_TIMEZONE` | 任意 | タイムゾーン設定 | `Asia/Tokyo` |
+
+- 運用ルール
+	- firmware 用の設定は `.env.firmware`（ローカル専用）で管理し、git 管理対象に含めない
+	- 共有用には `.env.firmware.example` を配置し、実値ではなくダミー値のみ記載する
+	- `FW_WIFI_PASSWORD`、`FW_WS_TOKEN` はログ出力禁止（マスク必須）とする
+
 ### 8.2 server
 
 ```txt
@@ -289,6 +313,30 @@ infra/
 - PostgreSQL は docker-compose で Go サービスと同梱して起動する
 - DB 接続情報は環境変数で管理し、リポジトリにパスワード等を含めない
 - マイグレーション管理ツール（例: golang-migrate）を採用し、スキーマ変更を追跡する
+
+#### 8.6.1 必要な環境変数一覧（server）
+
+起動に必要な設定値を以下に定義する。機密情報は必ず環境変数で与え、リポジトリへ平文で保存しない。
+
+| 変数名 | 必須 | 用途 | 例 |
+|--------|------|------|----|
+| `APP_ENV` | 任意 | 実行環境（local / dev / production） | `local` |
+| `SERVER_ADDR` | 任意 | Go サーバーの待受アドレス | `:8080` |
+| `LOG_LEVEL` | 任意 | ログ出力レベル | `info` |
+| `OPENAI_API_KEY` | 必須 | OpenAI（STT/LLM）呼び出し認証キー | `sk-...` |
+| `OPENAI_MODEL_CHAT` | 任意 | 会話用 LLM モデル名 | `gpt-4o-mini` |
+| `OPENAI_MODEL_STT` | 任意 | STT 用モデル名 | `gpt-4o-mini-transcribe` |
+| `VOICEVOX_BASE_URL` | 必須 | Voicevox API エンドポイント | `http://voicevox:50021` |
+| `DATABASE_URL` | 必須 | PostgreSQL 接続 URL | `postgres://user:pass@db:5432/stackchan?sslmode=disable` |
+| `SESSION_SECRET` | 必須 | セッション署名・暗号化に使う秘密鍵 | `change-me-in-production` |
+| `WS_READ_TIMEOUT` | 任意 | WebSocket 読み取りタイムアウト（秒） | `30` |
+| `WS_WRITE_TIMEOUT` | 任意 | WebSocket 書き込みタイムアウト（秒） | `30` |
+| `CORS_ALLOWED_ORIGINS` | 任意 | CORS 許可オリジン（カンマ区切り） | `http://localhost:5173` |
+
+- 運用ルール
+	- ローカル開発では `.env` を使用してよいが、`.env` は git 管理対象に含めない
+	- 共有用には `.env.example` を配置し、ダミー値のみ記載する
+	- 本番環境ではシークレットマネージャーまたは CI/CD の secret 機能から注入する
 
 #### Dockerfile マルチステージビルド構成
 

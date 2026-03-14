@@ -9,6 +9,8 @@
  */
 #include "session.h"
 #include <ArduinoJson.h>
+#include <M5Unified.h>
+#include <mbedtls/base64.h>
 
 namespace App {
 
@@ -23,6 +25,7 @@ void StackchanSession::begin() {
   Serial.println("[Session] begin()");
 
   _mic.begin();
+  _ttsPlayer.begin();
 
   // WebSocket クライアントの設定
   _ws.setUrl(String(FW_WS_URL));
@@ -78,6 +81,10 @@ void StackchanSession::loop() {
 
   // WebSocket のループ処理（自動再接続もここで実行されます）
   _ws.loop();
+
+  // TTS 再生状態を更新します。
+  _ttsPlayer.update();
+  renderAvatarOverlay();
 
   // Active 状態でのみ heartbeat を定期送信します
   if (_state == SessionState::Active) {
@@ -198,6 +205,7 @@ void StackchanSession::onWSConnected() {
 
 void StackchanSession::onWSDisconnected() {
   setState(SessionState::ConnectingWS);
+  _ttsPlayer.stop();
   // _ws の指数バックオフ再接続が自動で動作します
 }
 
@@ -268,6 +276,10 @@ void StackchanSession::onTextMessage(const String& msg) {
     handleSTTFinal(payloadStr);
   } else if (strcmp(type, Protocol::EventType::TTS_END) == 0) {
     handleTTSEnd(payloadStr);
+  } else if (strcmp(type, Protocol::EventType::AVATAR_EXPRESSION) == 0) {
+    handleAvatarExpression(payloadStr);
+  } else if (strcmp(type, Protocol::EventType::MOTION_PLAY) == 0) {
+    handleMotionPlay(payloadStr);
   } else if (strcmp(type, Protocol::EventType::ERROR_EVENT) == 0) {
     handleError(payloadStr);
   } else {
@@ -328,18 +340,69 @@ void StackchanSession::handleTTSEnd(const String& payloadJson) {
   JsonDocument payload;
   deserializeJson(payload, payloadJson);
 
-  const char* requestId    = payload["request_id"]    | "";
-  const char* codec        = payload["codec"]         | "";
-  int         durationMs   = payload["duration_ms"]   | 0;
-  int         sampleRateHz = payload["sample_rate_hz"] | 0;
-
-  // audio_base64 はフェーズ 6 でデコード予定。シリアルバッファ溢れを防ぐため値は出力しません。
+  const char* requestId  = payload["request_id"] | "";
+  const char* codec      = payload["codec"] | "";
+  int durationMs         = payload["duration_ms"] | 0;
+  int sampleRateHz       = payload["sample_rate_hz"] | 0;
   const char* audioBase64 = payload["audio_base64"] | "";
-  size_t      b64Len      = strlen(audioBase64);
 
-  Serial.printf("[TTS] request_id=%s codec=%s duration_ms=%d sample_rate_hz=%d base64_len=%zu\n",
-    requestId, codec, durationMs, sampleRateHz, b64Len);
-  Serial.println("[TTS] NOTE: audio_base64 decoding deferred to Phase 6");
+  _currentRequestId = String(requestId);
+
+  // Phase 6 最小実装: PCM 音声を想定して再生します（opus は未対応）。
+  if (strcmp(codec, "pcm") != 0) {
+    Serial.printf("[TTS] request_id=%s codec=%s is not supported yet, fallback beep\n", requestId, codec);
+    M5.Speaker.tone(1200, 80);
+    return;
+  }
+
+  uint8_t* decoded = nullptr;
+  size_t decodedLen = 0;
+  if (!decodeBase64(String(audioBase64), &decoded, &decodedLen)) {
+    Serial.printf("[TTS] request_id=%s base64 decode failed\n", requestId);
+    return;
+  }
+
+  const bool started = _ttsPlayer.playPCM16(decoded, decodedLen, static_cast<uint32_t>(sampleRateHz), true);
+  free(decoded);
+
+  if (!started) {
+    Serial.printf("[TTS] request_id=%s playback start failed\n", requestId);
+    return;
+  }
+
+  Serial.printf("[TTS] request_id=%s playback started codec=%s duration_ms=%d sample_rate_hz=%d decoded_bytes=%u start_latency_ms=%u\n",
+    requestId,
+    codec,
+    durationMs,
+    sampleRateHz,
+    static_cast<unsigned>(decodedLen),
+    static_cast<unsigned>(_ttsPlayer.startLatencyMs()));
+}
+
+void StackchanSession::handleAvatarExpression(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* expression = payload["expression"] | "neutral";
+  _expression = String(expression);
+  Serial.printf("[Avatar] expression=%s\n", _expression.c_str());
+}
+
+void StackchanSession::handleMotionPlay(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* motion = payload["motion"] | "idle";
+  _motion = String(motion);
+
+  // フェーズ 6 では安全な最小モーション（通知 + 軽いビープ）のみ実装します。
+  if (_motion == "nod") {
+    M5.Speaker.tone(900, 40);
+  } else if (_motion == "shake") {
+    M5.Speaker.tone(700, 40);
+  }
+
+  Serial.printf("[Avatar] motion=%s\n", _motion.c_str());
 }
 
 void StackchanSession::handleError(const String& payloadJson) {
@@ -352,6 +415,64 @@ void StackchanSession::handleError(const String& payloadJson) {
 
   Serial.printf("[Session] ERROR code=%s message=%s retryable=%d\n",
     code, message, (int)retry);
+}
+
+void StackchanSession::renderAvatarOverlay() {
+  // 描画更新は 80ms 周期に制限します（表示処理の負荷抑制）。
+  const unsigned long now = millis();
+  if (now - _lastAvatarRenderMs < 80) {
+    return;
+  }
+  _lastAvatarRenderMs = now;
+
+  const float lip = _ttsPlayer.lipLevel();
+  const int mouthWidth = static_cast<int>(lip * 80.0f);
+
+  // 画面下部に簡易アバター状態を描画します。
+  M5.Display.fillRect(0, 180, 320, 60, TFT_BLACK);
+  M5.Display.setCursor(6, 184);
+  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+  M5.Display.printf("Expr:%s  Motion:%s", _expression.c_str(), _motion.c_str());
+  M5.Display.setCursor(6, 202);
+  M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
+  M5.Display.printf("Playback:%d Req:%s", (int)_ttsPlayer.state(), _currentRequestId.c_str());
+  M5.Display.drawRect(200, 200, 100, 16, TFT_WHITE);
+  M5.Display.fillRect(202, 202, mouthWidth, 12, TFT_GREEN);
+}
+
+bool StackchanSession::decodeBase64(const String& src, uint8_t** out, size_t* outLen) {
+  if (out == nullptr || outLen == nullptr) {
+    return false;
+  }
+  *out = nullptr;
+  *outLen = 0;
+
+  if (src.length() == 0) {
+    return false;
+  }
+
+  // Base64 展開後サイズの上限見積り
+  const size_t maxLen = (src.length() * 3) / 4 + 4;
+  uint8_t* buffer = static_cast<uint8_t*>(malloc(maxLen));
+  if (buffer == nullptr) {
+    return false;
+  }
+
+  size_t written = 0;
+  const int rc = mbedtls_base64_decode(
+      buffer,
+      maxLen,
+      &written,
+      reinterpret_cast<const unsigned char*>(src.c_str()),
+      src.length());
+  if (rc != 0 || written == 0) {
+    free(buffer);
+    return false;
+  }
+
+  *out = buffer;
+  *outLen = written;
+  return true;
 }
 
 }  // namespace App

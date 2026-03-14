@@ -14,6 +14,8 @@
 - stt.final （フェーズ 4 追加）
 - tts.end （フェーズ 4 追加）
 - heartbeat （フェーズ 5 追加）
+- avatar.expression （フェーズ 6 追加）
+- motion.play （フェーズ 6 追加）
 
 ## 2. Common Envelope
 
@@ -151,6 +153,7 @@
   - duration_ms: integer (required, minimum: 1)
   - sample_rate_hz: integer (required, enum: 8000, 16000, 22050, 24000, 44100, 48000)
   - codec: string (required, enum: opus, pcm)
+- フェーズ 6 の最小再生パスでは `codec=pcm` を優先する
 - 将来候補: `tts.chunk`（音声ストリーミング配信）
 
 ### 5.4 heartbeat
@@ -162,6 +165,28 @@
   - rssi: integer (optional) — Wi-Fi 信号強度（dBm）
 - サーバーは heartbeat 受信時に接続タイムアウトをリセットする
 - `WS_READ_TIMEOUT` は `heartbeat_interval_ms × 3` 以上に設定すること（デフォルト 45s = 15s × 3）
+
+### 5.5 avatar.expression
+
+- Direction: server -> firmware
+- Purpose: 発話内容に応じてアバター表情を更新する
+- JSON Schema: `protocol/websocket/schemas/avatar.expression.schema.json`
+- Example: `protocol/examples/avatar.expression.example.json`
+- Payload fields:
+  - request_id: string (required)
+  - expression: string (required, enum: neutral, happy, sad, surprised)
+  - intensity: number (optional, 0.0–1.0)
+
+### 5.6 motion.play
+
+- Direction: server -> firmware
+- Purpose: サーボ等の最小モーション再生を指示する
+- JSON Schema: `protocol/websocket/schemas/motion.play.schema.json`
+- Example: `protocol/examples/motion.play.example.json`
+- Payload fields:
+  - request_id: string (required)
+  - motion: string (required, enum: idle, nod, shake)
+  - speed: number (optional, 0.1–3.0)
 
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 

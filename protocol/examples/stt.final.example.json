@@ -1,0 +1,12 @@
+{
+  "type": "stt.final",
+  "timestamp": "2026-03-14T12:00:05Z",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sequence": 2,
+  "version": "1.0",
+  "payload": {
+    "request_id": "stream-001",
+    "transcript": "今日もよろしくお願いします",
+    "confidence": 0.97
+  }
+}

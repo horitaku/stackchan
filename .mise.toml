@@ -1,0 +1,31 @@
+[tasks."fw:build"]
+description = "Build firmware (stackchan_cores3)"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action build"
+
+[tasks."fw:port"]
+description = "Detect firmware serial port (prefer ESP32-S3 VID:PID=303A:1001)"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action port"
+
+[tasks."fw:upload"]
+description = "Upload firmware to detected COM port"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action upload"
+
+[tasks."fw:monitor"]
+description = "Open serial monitor on detected COM port"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action monitor"
+
+[tasks."fw:upmon"]
+description = "Upload and monitor on detected COM port"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action upmon"
+
+[tasks."fw:clean"]
+description = "Clean firmware build artifacts"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action clean"
+
+[tasks."server:healthz"]
+description = "Check server healthz endpoint"
+run = "powershell -NoProfile -Command \"$r=Invoke-WebRequest -Uri http://127.0.0.1:8080/healthz -UseBasicParsing -TimeoutSec 5; Write-Output ('STATUS=' + $r.StatusCode); Write-Output $r.Content\""
+
+[tasks."server:run"]
+description = "Run development server (Go + Gin)"
+run = '''powershell -NoProfile -Command "$env:APP_ENV='local'; go run ./server/cmd/stackchan-server"'''

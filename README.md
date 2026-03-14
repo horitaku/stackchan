@@ -42,10 +42,30 @@
 2. server 用設定を作る
    - `Copy-Item .env.example .env`
 3. firmware 用設定を作る
-   - `Copy-Item firmware/platformio.ini.example firmware/platformio.ini.local`
+  - `Copy-Item firmware/platformio.ini.local.example firmware/platformio.ini.local`
    - `Copy-Item firmware/include/secrets.example.h firmware/include/secrets.h`
 4. 機密情報の扱いを確認する
    - `Get-Content docs/project/secrets-operations.md`
+
+## mise タスク（任意）
+
+長い PlatformIO コマンドを覚えなくても実行できるように、`mise` タスクを用意しています。
+`mise` コマンドはリポジトリルート（`stackchan/`）で実行してください。
+
+- タスク一覧
+  - `mise tasks`
+- 開発サーバー起動
+  - `mise run server:run`
+- サーバーヘルスチェック
+  - `mise run server:healthz`
+- firmware ビルド
+  - `mise run fw:build`
+- firmware 書き込み（自動検出ポート）
+  - `mise run fw:upload`
+- シリアルモニター（自動検出ポート）
+  - `mise run fw:monitor`
+- 書き込み + モニター（自動検出ポート）
+  - `mise run fw:upmon`
 
 ## 進捗の見かた
 

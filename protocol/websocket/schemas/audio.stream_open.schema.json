@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackchan.local/protocol/websocket/schemas/audio.stream_open.schema.json",
+  "allOf": [
+    {
+      "$ref": "./envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "audio.stream_open"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["stream_id", "codec", "sample_rate_hz"],
+          "additionalProperties": false,
+          "properties": {
+            "stream_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "ストリームを一意に識別する UUID v4 形式の文字列"
+            },
+            "codec": {
+              "type": "string",
+              "enum": ["opus", "pcm"],
+              "description": "音声コーデック。Phase 5 では pcm、Phase 6 以降では opus を使用します"
+            },
+            "sample_rate_hz": {
+              "type": "integer",
+              "enum": [8000, 16000, 22050, 24000, 44100, 48000],
+              "description": "サンプリングレート（Hz）"
+            },
+            "frame_duration_ms": {
+              "type": "integer",
+              "enum": [10, 20, 40, 60],
+              "description": "音声フレームの長さ（ms）。省略時はサーバーがコーデックのデフォルト値を使用します"
+            },
+            "channel_count": {
+              "type": "integer",
+              "enum": [1, 2],
+              "description": "チャンネル数。1=モノラル、2=ステレオ。省略時は 1 として扱います"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

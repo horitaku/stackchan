@@ -42,10 +42,30 @@
 2. server 用設定を作る
    - `Copy-Item .env.example .env`
 3. firmware 用設定を作る
-   - `Copy-Item firmware/platformio.ini.example firmware/platformio.ini.local`
+   - `Copy-Item firmware/platformio.ini.local.example firmware/platformio.ini.local`
    - `Copy-Item firmware/include/secrets.example.h firmware/include/secrets.h`
 4. 機密情報の扱いを確認する
    - `Get-Content docs/project/secrets-operations.md`
+
+## mise タスク（任意）
+
+長い PlatformIO コマンドを覚えなくても実行できるように、`mise` タスクを用意しています。
+`mise` コマンドはリポジトリルート（`stackchan/`）で実行してください。
+
+- タスク一覧
+  - `mise tasks`
+- 開発サーバー起動
+  - `mise run server:run`
+- サーバーヘルスチェック
+  - `mise run server:healthz`
+- firmware ビルド
+  - `mise run fw:build`
+- firmware 書き込み（自動検出ポート）
+  - `mise run fw:upload`
+- シリアルモニター（自動検出ポート）
+  - `mise run fw:monitor`
+- 書き込み + モニター（自動検出ポート）
+  - `mise run fw:upmon`
 
 ## 進捗の見かた
 
@@ -74,27 +94,28 @@
 このプロジェクトは、先人の素晴らしい取り組みに強く影響を受けています。
 
 - 本家 Stackchan を生み出し、コミュニティを牽引してくださっている ししかわさん
-  - GitHub: https://github.com/stack-chan/stack-chan
-  - X: https://x.com/stack_chan
-  - 記事: https://hackaday.io/project/181344-stack-chan-javascript-driven-super-kawaii-robot
+  - GitHub: [stack-chan/stack-chan](https://github.com/stack-chan/stack-chan)
+  - X: [@stack_chan](https://x.com/stack_chan)
+  - 記事: [Stack-chan: JavaScript driven super kawaii robot](https://hackaday.io/project/181344-stack-chan-javascript-driven-super-kawaii-robot)
+  - 感謝のことば: Stackchan の原点となる発想と実装、そしてコミュニティへの継続的な発信が、このプロジェクトの出発点になっています。
 - Stackchan の土台となるデバイス/エコシステムを提供してくださっている M5Stack社
-  - 公式サイト: https://m5stack.com/
-  - GitHub: https://github.com/m5stack
-  - 謝辞内容: M5Stack シリーズと周辺エコシステムが、Stackchan 開発と検証の実装基盤として大きく貢献しています。
+  - 公式サイト: [m5stack.com](https://m5stack.com/)
+  - GitHub: [m5stack](https://github.com/m5stack)
+  - 感謝のことば: M5Stack シリーズと周辺エコシステムが、Stackchan の開発と検証を進める実装基盤として大きく貢献しています。
 
-あわせて、以下の関連リポジトリとメンテナの皆さまにも感謝します。
+あわせて、以下の関連リポジトリとメンテナの皆さまにも深く感謝します。
 
 - stackchan-atama
-  - リポジトリ: https://github.com/karaage0703/stackchan-atama
+  - リポジトリ: [karaage0703/stackchan-atama](https://github.com/karaage0703/stackchan-atama)
   - メンテナ: karaage0703さん
-  - 謝辞内容: Arduino フレームワークでの実装資産が、派生開発や比較検証の土台として大きな助けになっています。
+  - 感謝のことば: Arduino フレームワークでの実装資産が、派生開発や比較検証の土台として大きな助けになっています。
 - m5stack-avatar
-  - リポジトリ: https://github.com/stack-chan/m5stack-avatar
+  - リポジトリ: [stack-chan/m5stack-avatar](https://github.com/stack-chan/m5stack-avatar)
   - メンテナ: mongonta0716さんをはじめとするメンテナの皆さま
-  - 謝辞内容: アバター描画ライブラリとして、表情表現や顔表示まわりの設計・実装を進める上で重要な基盤になっています。
+  - 感謝のことば: アバター描画ライブラリとして、表情表現や顔表示まわりの設計・実装を進める上で重要な基盤になっています。
 - AI_StackChan_Ex
-  - リポジトリ: https://github.com/ronron-gh/AI_StackChan_Ex
+  - リポジトリ: [ronron-gh/AI_StackChan_Ex](https://github.com/ronron-gh/AI_StackChan_Ex)
   - メンテナ: robo8080さん（原点となる実装と知見共有）、ronron-ghさん（機能拡張と継続メンテナンス）
-  - 謝辞内容: AI サービス連携、YAML ベース設定、Realtime API 活用など、実運用に近い知見が本プロジェクトの設計検討に大きく寄与しています。
+  - 感謝のことば: AI サービス連携、YAML ベース設定、Realtime API 活用など、実運用に近い知見が本プロジェクトの設計検討に大きく寄与しています。
 
 あらためて、心から感謝します。

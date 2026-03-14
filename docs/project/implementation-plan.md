@@ -95,6 +95,7 @@
 - Wi-Fi 接続と WebSocket 再接続戦略を実装します。
 - session hello とデバイス状態を送信します。
 - firmware の責務はデバイス I/O とプロトコル処理に限定します。
+- 実行タスクは docs/project/phase05-tasklist.md で管理します。
 
 ### フェーズ 6. 再生とアバター同期
 

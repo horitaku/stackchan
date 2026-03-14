@@ -3,7 +3,7 @@
 ## 1. Scope
 
 この文書は Stackchan のプロトコル v0 における WebSocket イベント契約を定義します。
-対象は次のイベントセットです（フェーズ 4 で拡張）。
+対象は次のイベントセットです（フェーズ 5 で拡張）。
 
 - session.hello
 - session.welcome
@@ -13,6 +13,7 @@
 - audio.stream_open （フェーズ 4 追加）
 - stt.final （フェーズ 4 追加）
 - tts.end （フェーズ 4 追加）
+- heartbeat （フェーズ 5 追加）
 
 ## 2. Common Envelope
 
@@ -118,7 +119,8 @@
 
 - Direction: firmware -> server
 - Purpose: バイナリフレーム送信を開始する前に、ストリームのコーデック・フォーマット情報を登録する
-- JSON Schema: protocol/websocket/schemas/ 未作成（フェーズ 5 で追加予定）
+- JSON Schema: `protocol/websocket/schemas/audio.stream_open.schema.json`
+- Example: `protocol/examples/audio.stream_open.example.json`
 - Payload fields:
   - stream_id: string (required, UUID 推奨)
   - codec: string (required, enum: opus, pcm)
@@ -151,13 +153,23 @@
   - codec: string (required, enum: opus, pcm)
 - 将来候補: `tts.chunk`（音声ストリーミング配信）
 
+### 5.4 heartbeat
+
+- Direction: firmware -> server
+- Purpose: 接続維持のためのキープアライブ通知。`session.welcome` の `heartbeat_interval_ms` 間隔で送信する
+- Payload fields:
+  - uptime_ms: integer (required) — firmware 起動からの経過時間（ms）
+  - rssi: integer (optional) — Wi-Fi 信号強度（dBm）
+- サーバーは heartbeat 受信時に接続タイムアウトをリセットする
+- `WS_READ_TIMEOUT` は `heartbeat_interval_ms × 3` 以上に設定すること（デフォルト 45s = 15s × 3）
+
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 
 ### 6.1 バイナリ WebSocket フレームの構造
 
 audio.stream_open 後に送信するバイナリ WebSocket フレームの構造:
 
-```
+```text
 [ bytes 0–35 ]  stream_id（UUID 文字列、ASCII 36 バイト固定長）
 [ bytes 36–  ]  音声データ（Opus フレームまたは raw PCM）
 ```

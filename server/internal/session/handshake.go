@@ -104,9 +104,12 @@ func buildHelloError(s *Session, env *protocol.Envelope, code, message string, r
 
 // buildWelcome は session.welcome メッセージを含む HelloResult を構築します。
 func buildWelcome(s *Session) HelloResult {
+	// heartbeat_interval_ms を明示的に設定します（firmware 側のデフォルトより優先されます）
+	heartbeatMs := 15000
 	welcome := WelcomePayload{
-		Accepted:   true,
-		ServerTime: time.Now().UTC().Format(time.RFC3339),
+		Accepted:            true,
+		ServerTime:          time.Now().UTC().Format(time.RFC3339),
+		HeartbeatIntervalMs: &heartbeatMs,
 	}
 	seq := s.Sequence.NextOutbound()
 	env, err := protocol.NewEnvelope("session.welcome", s.ID, seq, welcome)

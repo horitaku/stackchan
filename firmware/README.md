@@ -143,6 +143,42 @@ firmware/
 
 ## 7. Phase 6 に向けた注意事項
 
-- 現フェーズ（Phase 5）の音声は**ダミー PCM（無音）**です。実マイク収音は Phase 6 で実装します
-- `firmware/runtime/audio/mic_reader.cpp` の `readFrame()` に `M5.Mic.record()` を追加する予定です
-- Opus エンコードは Phase 6 で導入します。フレームフォーマットは変わりません
+- 現フェーズでは送信側は引き続き**ダミー PCM（無音）**です。実マイク収音は後続タスクで実装します
+- `firmware/runtime/audio/mic_reader.cpp` の `readFrame()` に `M5.Mic.record()` を追加予定です
+- Opus エンコード送信は後続タスクで導入し、再生側は Phase 6 最小実装として PCM 再生を優先します
+
+## 8. Phase 6 最小確認（再生とアバター同期）
+
+### 8.1 firmware 側で確認するログ
+
+`tts.end` 受信後に次のログが出ることを確認します。
+
+```text
+[TTS] request_id=... playback started codec=pcm duration_ms=...
+[TTSPlayer] playback started sample_rate=16000 duration_est_ms=...
+[Avatar] expression=happy
+[Avatar] motion=nod
+```
+
+### 8.2 画面表示で確認する内容
+
+- 画面下部に `Expr` と `Motion` の状態が表示されること
+- `Playback` が `Playing` 相当の値に遷移すること
+- 口開閉バー（緑）が再生中に変化すること
+
+### 8.3 手動テストシナリオ
+
+1. サーバーを起動して firmware を接続します。
+2. 画面タップで音声ストリームを送信します。
+3. `stt.final` / `tts.end` を受信した後に再生ログが出ることを確認します。
+4. サーバー側から `avatar.expression` と `motion.play` を送信し、状態が反映されることを確認します。
+
+`wscat` 送信例:
+
+```json
+{"type":"avatar.expression","timestamp":"2026-03-15T10:00:08Z","session_id":"<session_id>","sequence":100,"version":"1.0","payload":{"request_id":"stream-001","expression":"happy","intensity":0.8}}
+```
+
+```json
+{"type":"motion.play","timestamp":"2026-03-15T10:00:09Z","session_id":"<session_id>","sequence":101,"version":"1.0","payload":{"request_id":"stream-001","motion":"nod","speed":1.0}}
+```

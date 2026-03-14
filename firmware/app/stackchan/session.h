@@ -18,6 +18,7 @@
 #include "../../runtime/network/wifi.h"
 #include "../../runtime/network/ws_client.h"
 #include "../../runtime/audio/mic_reader.h"
+#include "../../runtime/audio/tts_player.h"
 #include "../../protocol/envelope.h"
 #include "../../protocol/events.h"
 
@@ -66,6 +67,7 @@ class StackchanSession {
  private:
   Network::WsClient  _ws;
   Audio::MicReader   _mic;
+  Audio::TTSPlayer   _ttsPlayer;
   Protocol::OutboundSequence _seq;
 
   SessionState  _state{SessionState::Idle};
@@ -79,6 +81,12 @@ class StackchanSession {
   unsigned long _wifiRetryDelayMs{FW_RECONNECT_BASE_MS};
   unsigned long _lastWiFiAttemptMs{0};
 
+  // 再生・アバター状態（Phase 6）
+  String _currentRequestId{""};
+  String _expression{"neutral"};
+  String _motion{"idle"};
+  unsigned long _lastAvatarRenderMs{0};
+
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
 
@@ -90,11 +98,15 @@ class StackchanSession {
   // 送信ヘルパー
   void sendHello();
   void sendHeartbeat();
+  void renderAvatarOverlay();
+  bool decodeBase64(const String& src, uint8_t** out, size_t* outLen);
 
-  // 受信イベントハンドラ（P5-06, P5-09 対応）
+  // 受信イベントハンドラ（P6 で avatar / motion を追加）
   void handleWelcome(const String& payloadJson, const String& envelopeSessionId);
   void handleSTTFinal(const String& payloadJson);
   void handleTTSEnd(const String& payloadJson);
+  void handleAvatarExpression(const String& payloadJson);
+  void handleMotionPlay(const String& payloadJson);
   void handleError(const String& payloadJson);
 };
 

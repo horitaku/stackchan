@@ -29,3 +29,17 @@ type BinaryStreamOpenPayload struct {
 	FrameDurationMs int    `json:"frame_duration_ms"`
 	ChannelCount    int    `json:"channel_count"`
 }
+
+// AvatarExpressionPayload は avatar.expression イベントのペイロードです（server -> firmware）。
+type AvatarExpressionPayload struct {
+	RequestID  string  `json:"request_id"`
+	Expression string  `json:"expression"`
+	Intensity  float64 `json:"intensity,omitempty"`
+}
+
+// MotionPlayPayload は motion.play イベントのペイロードです（server -> firmware）。
+type MotionPlayPayload struct {
+	RequestID string  `json:"request_id"`
+	Motion    string  `json:"motion"`
+	Speed     float64 `json:"speed,omitempty"`
+}

@@ -2,6 +2,8 @@ package mock
 
 import (
 	"context"
+	"encoding/base64"
+	"math"
 	"strings"
 
 	"github.com/stackchan/server/internal/providers"
@@ -19,13 +21,32 @@ func (m *TTS) Synthesize(_ context.Context, req providers.TTSRequest) (providers
 	if text == "" {
 		return providers.TTSResult{}, providers.NewError(m.Name(), providers.CodeInvalidInput, "tts input text is empty", false, nil)
 	}
-	durationMs := len([]rune(text)) * 60
-	if durationMs < 300 {
-		durationMs = 300
-	}
+	// Firmware 受信バッファ上限を超えないよう、フェーズ 6 の mock 音声は短尺固定にします。
+	const durationMs = 300
+	const sampleRateHz = 8000
+
+	pcmBytes := makeSinePCM16(durationMs, sampleRateHz, 440.0)
 	return providers.TTSResult{
-		SampleRateHz: 24000,
+		SampleRateHz: sampleRateHz,
 		DurationMs:   durationMs,
-		AudioBase64:  "bW9jay10dHMtYXVkaW8=",
+		AudioBase64:  base64.StdEncoding.EncodeToString(pcmBytes),
 	}, nil
+}
+
+func makeSinePCM16(durationMs, sampleRateHz int, freqHz float64) []byte {
+	totalSamples := durationMs * sampleRateHz / 1000
+	if totalSamples < 1 {
+		totalSamples = sampleRateHz / 10
+	}
+
+	pcm := make([]byte, totalSamples*2)
+	const amplitude = 0.22
+	for i := 0; i < totalSamples; i++ {
+		t := float64(i) / float64(sampleRateHz)
+		s := math.Sin(2.0 * math.Pi * freqHz * t)
+		v := int16(s * 32767.0 * amplitude)
+		pcm[i*2] = byte(v & 0xff)
+		pcm[i*2+1] = byte((uint16(v) >> 8) & 0xff)
+	}
+	return pcm
 }

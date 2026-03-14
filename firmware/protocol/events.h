@@ -30,6 +30,10 @@ constexpr const char* SESSION_WELCOME    = "session.welcome";
 constexpr const char* STT_FINAL          = "stt.final";
 /// TTS 合成完了：音声データと再生メタデータを通知する
 constexpr const char* TTS_END            = "tts.end";
+/// 表情状態を更新する
+constexpr const char* AVATAR_EXPRESSION  = "avatar.expression";
+/// モーション再生を指示する
+constexpr const char* MOTION_PLAY        = "motion.play";
 /// エラー通知（双方向）
 constexpr const char* ERROR_EVENT        = "error";
 

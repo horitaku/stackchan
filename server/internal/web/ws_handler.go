@@ -271,7 +271,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 				AudioBase64:  result.TTSAudioBase64,
 				DurationMs:   result.TTSDuration,
 				SampleRateHz: result.TTSSampleHz,
-				Codec:        "opus",
+				Codec:        "pcm",
 			}
 			if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
 				log.Error().Err(err).Msg("failed to send tts.end")

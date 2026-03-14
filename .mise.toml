@@ -24,8 +24,20 @@ run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -
 
 [tasks."server:healthz"]
 description = "Check server healthz endpoint"
-run = "powershell -NoProfile -Command \"$r=Invoke-WebRequest -Uri http://127.0.0.1:8080/healthz -UseBasicParsing -TimeoutSec 5; Write-Output ('STATUS=' + $r.StatusCode); Write-Output $r.Content\""
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action healthz"
 
 [tasks."server:run"]
 description = "Run development server (Go + Gin)"
-run = '''powershell -NoProfile -Command "$env:APP_ENV='local'; go run ./server/cmd/stackchan-server"'''
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action run"
+
+[tasks."server:kill8080"]
+description = "Stop processes using TCP port 8080"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action kill8080"
+
+[tasks."server:restart"]
+description = "Stop TCP/8080 process and run development server"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action restart"
+
+[tasks."server:restart:bg"]
+description = "Stop TCP/8080 process and run development server in background"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action restart_bg"

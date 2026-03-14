@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stackchan/server/internal/protocol"
+	"github.com/stackchan/server/internal/providers"
 )
 
 // State はセッションの状態を表します。
@@ -23,13 +24,14 @@ const (
 
 // Session は 1 つの WebSocket 接続に対応するセッション情報です。
 type Session struct {
-	ID        string
-	DeviceID  string
-	State     State
-	CreatedAt time.Time
-	Ctx       context.Context
-	Cancel    context.CancelFunc
-	Sequence  *protocol.SequenceTracker
+	ID           string
+	DeviceID     string
+	State        State
+	CreatedAt    time.Time
+	Ctx          context.Context
+	Cancel       context.CancelFunc
+	Sequence     *protocol.SequenceTracker
+	AudioStreams map[string][]providers.AudioChunk
 }
 
 // Manager はセッションのライフサイクルをインメモリで管理します。
@@ -49,12 +51,13 @@ func NewManager() *Manager {
 func (m *Manager) Create(parentCtx context.Context) *Session {
 	ctx, cancel := context.WithCancel(parentCtx)
 	s := &Session{
-		ID:        uuid.NewString(),
-		State:     StateConnected,
-		CreatedAt: time.Now().UTC(),
-		Ctx:       ctx,
-		Cancel:    cancel,
-		Sequence:  protocol.NewSequenceTracker(),
+		ID:           uuid.NewString(),
+		State:        StateConnected,
+		CreatedAt:    time.Now().UTC(),
+		Ctx:          ctx,
+		Cancel:       cancel,
+		Sequence:     protocol.NewSequenceTracker(),
+		AudioStreams: make(map[string][]providers.AudioChunk),
 	}
 	m.mu.Lock()
 	m.sessions[s.ID] = s

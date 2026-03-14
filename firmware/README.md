@@ -39,15 +39,24 @@ cp include/secrets.example.h include/secrets.h
 
 ## 3. ビルドとフラッシュ
 
+### 3.0 PlatformIO 実行方式（Windows）
+
+- このリポジトリでは、Windows 環境の標準コマンドを `py -m platformio` とします。
+- 理由: `pip install --user platformio` で導入した場合、`pio.exe` の配置先が PATH に含まれず、`pio` コマンドが未認識になることがあるためです。
+- `pio` を使いたい場合は、以下をユーザー PATH へ追加して新しいシェルを開いてください。
+	- `C:\Users\<your-user>\AppData\Roaming\Python\Python313\Scripts`
+
+> 補足: 再起動だけでは PATH は増えません。PATH を追加した場合のみ、新しいシェルで `pio` が使えるようになります。
+
 ```bash
 # ビルドのみ
-pio run
+py -m platformio run -e stackchan_cores3
 
 # ビルド + フラッシュ（ポートは自動検出、または -e m5stack-cores3 で明示）
-pio run --target upload
+py -m platformio run -e stackchan_cores3 --target upload
 
 # シリアルモニター（ボーレート 115200）
-pio device monitor --baud 115200
+py -m platformio device monitor --baud 115200
 ```
 
 ## 4. 起動後の疎通確認
@@ -129,6 +138,8 @@ firmware/
 | タッチしても音声送信ログが出ない | シリアルモニターで `State != Active` が出ていないか確認 |
 | ビルドエラー: `secrets.h not found` | `include/secrets.h` を作成したか確認（`secrets.example.h` をコピー） |
 | `platformio.ini.local not found` の警告 | 警告は無視可能。ただし Wi-Fi/WS の設定値が反映されないため要確認 |
+| `self-signed certificate in certificate chain` / `CERTIFICATE_VERIFY_FAILED` | 企業プロキシ配下の TLS 検証エラー。対処手順は [docs/project/secrets-operations.md](docs/project/secrets-operations.md) の「企業プロキシ環境での TLS エラー対応（PlatformIO）」を参照 |
+| `pio` が見つからない（`command not found`） | Windows では `py -m platformio` を使う。`pio` を使う場合は Python Scripts の PATH 追加が必要 |
 
 ## 7. Phase 6 に向けた注意事項
 

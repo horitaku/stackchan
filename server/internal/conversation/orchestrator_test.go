@@ -18,7 +18,7 @@ func TestOrchestrator_ProcessAudioStream_Success(t *testing.T) {
 		providers.CallPolicy{Timeout: 2 * time.Second, MaxAttempts: 2, BaseDelay: 10 * time.Millisecond},
 	)
 
-	res, err := o.ProcessAudioStream(context.Background(), "sess-001", "stream-001", []providers.AudioChunk{{
+	res, err := o.ProcessAudioStream(context.Background(), "sess-001", "req-001", "stream-001", []providers.AudioChunk{{
 		StreamID:   "stream-001",
 		ChunkIndex: 0,
 		Codec:      "opus",
@@ -46,7 +46,7 @@ func TestOrchestrator_ProcessAudioStream_FailureMappedAsProviderError(t *testing
 	)
 
 	// stream_id 空で STT 側 invalid_input を発生させます。
-	_, err := o.ProcessAudioStream(context.Background(), "sess-001", "", nil)
+	_, err := o.ProcessAudioStream(context.Background(), "sess-001", "req-001", "", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

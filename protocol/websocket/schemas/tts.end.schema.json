@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "tts.end",
+  "description": "TTS 合成が完了した音声データを server から firmware へ送信するイベント",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type": { "const": "tts.end" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "version": { "const": "1.0" },
+    "payload": { "$ref": "#/definitions/TTSEndPayload" }
+  },
+  "definitions": {
+    "TTSEndPayload": {
+      "type": "object",
+      "required": ["request_id", "audio_base64", "duration_ms", "sample_rate_hz", "codec"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "会話ターンを識別するリクエスト ID（stt.final の request_id と一致）"
+        },
+        "audio_base64": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Base64 エンコードされた音声データ"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "音声の再生時間（ミリ秒）"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "enum": [8000, 16000, 22050, 24000, 44100, 48000],
+          "description": "音声サンプルレート（Hz）"
+        },
+        "codec": {
+          "type": "string",
+          "enum": ["opus", "pcm"],
+          "description": "音声コーデック"
+        }
+      }
+    }
+  }
+}

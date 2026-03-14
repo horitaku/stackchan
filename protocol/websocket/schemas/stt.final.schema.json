@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "stt.final",
+  "description": "STT 処理が完了したことを server から firmware へ通知するイベント",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type": { "const": "stt.final" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "version": { "const": "1.0" },
+    "payload": { "$ref": "#/definitions/STTFinalPayload" }
+  },
+  "definitions": {
+    "STTFinalPayload": {
+      "type": "object",
+      "required": ["request_id", "transcript"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "会話ターンを識別するリクエスト ID（フェーズ 4 では stream_id と同値）"
+        },
+        "transcript": {
+          "type": "string",
+          "description": "STT が認識したテキスト"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "認識信頼度（0〜1、省略可）"
+        }
+      }
+    }
+  }
+}

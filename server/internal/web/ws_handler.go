@@ -98,7 +98,12 @@ func (h *WSHandler) readLoop(ctx context.Context, conn *websocket.Conn, s *sessi
 			return
 		}
 
-		// v0 は JSON テキストメッセージのみ対応（バイナリは将来拡張）
+		// バイナリメッセージは handleBinaryFrame で処理します
+		if msgType == websocket.BinaryMessage {
+			h.handleBinaryFrame(ctx, conn, s, data)
+			continue
+		}
+		// v0 は JSON テキストメッセージのみ対応（バイナリは上記で分岐済み）
 		if msgType != websocket.TextMessage {
 			log.Warn().Int("msg_type", msgType).Msg("unsupported message type, skipping")
 			continue
@@ -165,6 +170,25 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			return true
 		}
 
+	case "audio.stream_open":
+		// バイナリフレームストリームのメタデータを登録します
+		var payload protocol.BinaryStreamOpenPayload
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "failed to parse audio.stream_open payload", false, &env.Type, &env.Sequence)
+			return false
+		}
+		if payload.StreamID == "" || payload.Codec == "" || payload.SampleRateHz <= 0 || payload.FrameDurationMs <= 0 || payload.ChannelCount <= 0 {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "audio.stream_open payload is invalid", false, &env.Type, &env.Sequence)
+			return false
+		}
+		s.RegisterBinaryStream(payload.StreamID, session.BinaryStreamMeta{
+			Codec:           payload.Codec,
+			SampleRateHz:    payload.SampleRateHz,
+			FrameDurationMs: payload.FrameDurationMs,
+			ChannelCount:    payload.ChannelCount,
+		})
+		log.Info().Str("stream_id", payload.StreamID).Str("codec", payload.Codec).Int("sample_rate_hz", payload.SampleRateHz).Msg("binary stream registered")
+
 	case "audio.chunk":
 		var payload audioChunkPayload
 		if err := json.Unmarshal(env.Payload, &payload); err != nil {
@@ -175,7 +199,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "audio.chunk payload is invalid", false, &env.Type, &env.Sequence)
 			return false
 		}
-		s.AddAudioChunk(providers.AudioChunk{
+		if err := s.AddAudioChunk(providers.AudioChunk{
 			StreamID:        payload.StreamID,
 			ChunkIndex:      payload.ChunkIndex,
 			Codec:           payload.Codec,
@@ -183,7 +207,11 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			FrameDurationMs: payload.FrameDurationMs,
 			ChannelCount:    payload.ChannelCount,
 			DataBase64:      payload.DataBase64,
-		})
+		}); err != nil {
+			log.Error().Err(err).Str("stream_id", payload.StreamID).Msg("audio chunk buffer overflow")
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, err.Error(), false, &env.Type, &env.Sequence)
+			return false
+		}
 
 	case "audio.end":
 		var payload audioEndPayload
@@ -196,11 +224,52 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			return false
 		}
 		if h.orchestrator != nil {
-			chunks := s.ConsumeAudioStream(payload.StreamID)
-			if _, err := h.orchestrator.ProcessAudioStream(ctx, s.ID, payload.StreamID, chunks); err != nil {
+			chunks, firstChunkAt := s.ConsumeAudioStream(payload.StreamID)
+			// 空ストリームチェック: チャンク受信前に audio.end が届いた場合はエラーです
+			if len(chunks) == 0 {
+				h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "audio stream is empty: no chunks received before audio.end", false, &env.Type, &env.Sequence)
+				return false
+			}
+			queueWaitMs := int64(0)
+			if !firstChunkAt.IsZero() {
+				queueWaitMs = time.Since(firstChunkAt).Milliseconds()
+			}
+			log.Info().
+				Str("stream_id", payload.StreamID).
+				Int("chunk_count", len(chunks)).
+				Int64("queue_wait_ms", queueWaitMs).
+				Msg("audio stream consumed, starting orchestration")
+
+			// requestID = stream_id（フェーズ 4 では stream_id を request_id として扱います）
+			requestID := payload.StreamID
+			result, err := h.orchestrator.ProcessAudioStream(ctx, s.ID, requestID, payload.StreamID, chunks)
+			if err != nil {
 				code, message, retryable := providers.ToProtocolError(err)
 				h.writeError(conn, s, code, message, retryable, &env.Type, &env.Sequence)
 				return false
+			}
+
+			// stt.final を送信します
+			sttPayload := protocol.STTFinalPayload{
+				RequestID:  result.RequestID,
+				Transcript: result.Transcript,
+			}
+			if err := h.sendEvent(conn, s, "stt.final", sttPayload); err != nil {
+				log.Error().Err(err).Msg("failed to send stt.final")
+				return true // 送信失敗は致命的（接続クローズ）
+			}
+
+			// tts.end を送信します
+			ttsPayload := protocol.TTSEndPayload{
+				RequestID:    result.RequestID,
+				AudioBase64:  result.TTSAudioBase64,
+				DurationMs:   result.TTSDuration,
+				SampleRateHz: result.TTSSampleHz,
+				Codec:        "opus",
+			}
+			if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
+				log.Error().Err(err).Msg("failed to send tts.end")
+				return true
 			}
 		}
 
@@ -248,4 +317,27 @@ func BuildJSONMessage(msgType, sessionID string, sequence int64, payload any) ([
 		return nil, err
 	}
 	return json.Marshal(env)
+}
+
+// sendEvent は指定のイベントをオートインクリメントされた sequence 付きで WebSocket へ送信します。
+func (h *WSHandler) sendEvent(conn *websocket.Conn, s *session.Session, msgType string, payload any) error {
+	seq := s.Sequence.NextOutbound()
+	data, err := BuildJSONMessage(msgType, s.ID, seq, payload)
+	if err != nil {
+		return err
+	}
+	if h.writeTimeoutSec > 0 {
+		conn.SetWriteDeadline(time.Now().Add(time.Duration(h.writeTimeoutSec) * time.Second))
+	}
+	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// handleBinaryFrame はバイナリ WebSocket フレームを Session.AddBinaryAudioFrame 経由で処理します。
+// フレームフォーマット: 先頭 36 バイト = stream_id、残り = 音声データ。
+func (h *WSHandler) handleBinaryFrame(ctx context.Context, conn *websocket.Conn, s *session.Session, data []byte) {
+	log := logging.FromContext(ctx)
+	if err := s.AddBinaryAudioFrame(data); err != nil {
+		log.Warn().Err(err).Int("frame_size", len(data)).Msg("failed to process binary frame")
+		h.writeError(conn, s, protocol.ErrCodeInvalidPayload, err.Error(), false, nil, nil)
+	}
 }

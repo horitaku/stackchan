@@ -24,18 +24,18 @@ const (
 
 // Session は 1 つの WebSocket 接続に対応するセッション情報です。
 type Session struct {
-	ID                      string
-	DeviceID                string
-	State                   State
-	CreatedAt               time.Time
-	Ctx                     context.Context
-	Cancel                  context.CancelFunc
-	Sequence                *protocol.SequenceTracker
-	AudioStreams             map[string][]providers.AudioChunk
+	ID           string
+	DeviceID     string
+	State        State
+	CreatedAt    time.Time
+	Ctx          context.Context
+	Cancel       context.CancelFunc
+	Sequence     *protocol.SequenceTracker
+	AudioStreams map[string][]providers.AudioChunk
 	// AudioStreamFirstChunkAt はストリームごとの最初のチャンク受信時刻を保持します（レイテンシ計測用）。
 	AudioStreamFirstChunkAt map[string]time.Time
 	// BinaryStreams はバイナリフレームストリームのメタデータを保持します（audio.stream_open で登録）。
-	BinaryStreams            map[string]*BinaryStreamMeta
+	BinaryStreams map[string]*BinaryStreamMeta
 }
 
 // Manager はセッションのライフサイクルをインメモリで管理します。
@@ -61,9 +61,9 @@ func (m *Manager) Create(parentCtx context.Context) *Session {
 		Ctx:                     ctx,
 		Cancel:                  cancel,
 		Sequence:                protocol.NewSequenceTracker(),
-		AudioStreams:             make(map[string][]providers.AudioChunk),
+		AudioStreams:            make(map[string][]providers.AudioChunk),
 		AudioStreamFirstChunkAt: make(map[string]time.Time),
-		BinaryStreams:            make(map[string]*BinaryStreamMeta),
+		BinaryStreams:           make(map[string]*BinaryStreamMeta),
 	}
 	m.mu.Lock()
 	m.sessions[s.ID] = s

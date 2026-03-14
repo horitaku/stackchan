@@ -157,7 +157,7 @@
 
 audio.stream_open 後に送信するバイナリ WebSocket フレームの構造:
 
-```
+```text
 [ bytes 0–35 ]  stream_id（UUID 文字列、ASCII 36 バイト固定長）
 [ bytes 36–  ]  音声データ（Opus フレームまたは raw PCM）
 ```

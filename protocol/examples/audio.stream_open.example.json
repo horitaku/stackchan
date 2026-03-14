@@ -1,0 +1,14 @@
+{
+  "type": "audio.stream_open",
+  "timestamp": "2026-03-14T12:00:01Z",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sequence": 2,
+  "version": "1.0",
+  "payload": {
+    "stream_id": "7f3d9a2e-1b4c-4e8f-a5d0-9c6b3e1f2847",
+    "codec": "pcm",
+    "sample_rate_hz": 16000,
+    "frame_duration_ms": 20,
+    "channel_count": 1
+  }
+}

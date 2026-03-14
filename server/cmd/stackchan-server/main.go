@@ -28,7 +28,8 @@ func main() {
 	log := logging.Logger
 
 	serverAddr := getEnv("SERVER_ADDR", ":8080")
-	readTimeout := getEnvInt("WS_READ_TIMEOUT", 30)
+	// WS_READ_TIMEOUT は heartbeat 間隔（15s）の 3 倍（45s）をデフォルトとします
+	readTimeout := getEnvInt("WS_READ_TIMEOUT", 45)
 	writeTimeout := getEnvInt("WS_WRITE_TIMEOUT", 30)
 
 	// 本番環境では Gin をリリースモードで動かします

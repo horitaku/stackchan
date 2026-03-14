@@ -46,6 +46,12 @@ type audioEndPayload struct {
 	Reason          string `json:"reason,omitempty"`
 }
 
+// heartbeatPayload は firmware から定期送信される heartbeat の payload 定義です。
+type heartbeatPayload struct {
+	UptimeMs int64 `json:"uptime_ms"`
+	RSSI     int   `json:"rssi,omitempty"`
+}
+
 // NewWSHandler は WSHandler を初期化して返します。
 // readTimeoutSec / writeTimeoutSec に 0 を指定するとタイムアウトなしになります。
 func NewWSHandler(manager *session.Manager, readTimeoutSec, writeTimeoutSec int, orchestrator *conversation.Orchestrator) *WSHandler {
@@ -272,6 +278,18 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 				return true
 			}
 		}
+
+	case "heartbeat":
+		// firmware キープアライブを受信します（接続監視 + ログ記録）
+		var payload heartbeatPayload
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			log.Warn().Err(err).Msg("failed to parse heartbeat payload")
+			return false
+		}
+		log.Info().
+			Int64("uptime_ms", payload.UptimeMs).
+			Int("rssi", payload.RSSI).
+			Msg("heartbeat received")
 
 	default:
 		log.Warn().Str("type", env.Type).Msg("unhandled event type")

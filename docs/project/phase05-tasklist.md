@@ -31,19 +31,19 @@
 
 | ID | タスク | 成果物 | 依存 | 優先度 | 担当 | 見積 | ステータス | 開始日 | 完了日 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| P5-01 | firmware ディレクトリ構造とビルド環境を整備する | firmware/ 配下のディレクトリ構成、platformio.ini、依存ライブラリ追加 | - | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P5-02 | Wi-Fi 接続モジュールを実装する | firmware/runtime/network/wifi.h・wifi.cpp、接続状態管理 | P5-01 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P5-03 | WebSocket クライアントを実装する | firmware/runtime/network/ws_client.h・ws_client.cpp、テキスト・バイナリ送受信基盤 | P5-01 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P5-04 | 指数バックオフ再接続ロジックを実装する | firmware/runtime/network/ 再接続ロジック、FW_RECONNECT_BASE_MS / FW_RECONNECT_MAX_MS 適用 | P5-02、P5-03 | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P5-05 | プロトコルメッセージ送受信ヘルパーを実装する | firmware/protocol/envelope.h・envelope.cpp、sequence カウンタ管理、JSON パース | P5-03 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P5-06 | session.hello/welcome フローを実装する | firmware/app/stackchan/session.h・session.cpp、hello 送信・welcome 解析・接続状態遷移 | P5-04、P5-05 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P5-07 | heartbeat を実装する（firmware + server） | firmware 側キープアライブ送信、server 側タイムアウト整合確認、heartbeat_interval_ms 運用値確定 | P5-06 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P5-08 | 最小音声送信フローを実装する | firmware からの audio.stream_open → binary フレーム送信 → audio.end 送信、テスト用 PCM データ活用 | P5-05、P5-06 | 高 | Copilot | 1.5 日 | Planned | - | - |
-| P5-09 | stt.final / tts.end 受信とデバッグログを実装する | 受信 JSON パース、transcript / codec / duration_ms のシリアルログ出力 | P5-06、P5-08 | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P5-10 | audio.stream_open の JSON Schema と example を作成する | protocol/websocket/schemas/audio.stream_open.schema.json、protocol/examples/audio.stream_open.example.json | - | 中 | Copilot | 0.5 日 | Planned | - | - |
-| P5-11 | firmware 疎通確認手順を文書化する | firmware/README.md の更新、シリアルモニター・wscat を使った手動確認手順 | P5-01 から P5-09 | 中 | Copilot | 0.5 日 | Planned | - | - |
-| P5-12 | フェーズ 6 引き継ぎ事項を整理する | 再生・アバター同期に向けた前提条件・未決事項メモ | P5-01 から P5-11 | 中 | Copilot | 0.5 日 | Planned | - | - |
-| P5-13 | フェーズ 5 完了レビューを実施する | レビュー記録、未解決課題リスト | P5-01 から P5-12 | 中 | Copilot | 0.5 日 | Planned | - | - |
+| P5-01 | firmware ディレクトリ構造とビルド環境を整備する | firmware/ 配下のディレクトリ構成、platformio.ini、依存ライブラリ追加 | - | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-02 | Wi-Fi 接続モジュールを実装する | firmware/runtime/network/wifi.h・wifi.cpp、接続状態管理 | P5-01 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-03 | WebSocket クライアントを実装する | firmware/runtime/network/ws_client.h・ws_client.cpp、テキスト・バイナリ送受信基盤 | P5-01 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-04 | 指数バックオフ再接続ロジックを実装する | firmware/runtime/network/ 再接続ロジック、FW_RECONNECT_BASE_MS / FW_RECONNECT_MAX_MS 適用 | P5-02、P5-03 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-05 | プロトコルメッセージ送受信ヘルパーを実装する | firmware/protocol/envelope.h・envelope.cpp、sequence カウンタ管理、JSON パース | P5-03 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-06 | session.hello/welcome フローを実装する | firmware/app/stackchan/session.h・session.cpp、hello 送信・welcome 解析・接続状態遷移 | P5-04、P5-05 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-07 | heartbeat を実装する（firmware + server） | firmware 側キープアライブ送信、server 側タイムアウト整合確認、heartbeat_interval_ms 運用値確定 | P5-06 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-08 | 最小音声送信フローを実装する | firmware からの audio.stream_open → binary フレーム送信 → audio.end 送信、テスト用 PCM データ活用 | P5-05、P5-06 | 高 | Copilot | 1.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-09 | stt.final / tts.end 受信とデバッグログを実装する | 受信 JSON パース、transcript / codec / duration_ms のシリアルログ出力 | P5-06、P5-08 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-10 | audio.stream_open の JSON Schema と example を作成する | protocol/websocket/schemas/audio.stream_open.schema.json、protocol/examples/audio.stream_open.example.json | - | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-11 | firmware 疎通確認手順を文書化する | firmware/README.md の更新、シリアルモニター・wscat を使った手動確認手順 | P5-01 から P5-09 | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-12 | フェーズ 6 引き継ぎ事項を整理する | 再生・アバター同期に向けた前提条件・未決事項メモ | P5-01 から P5-11 | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P5-13 | フェーズ 5 完了レビューを実施する | レビュー記録、未解決課題リスト | P5-01 から P5-12 | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
 
 ## 5. タスク詳細（実行手順）
 
@@ -253,9 +253,9 @@
 | audio.stream_open 受信（server 側） | 実装済み | ws_handler.go |
 | binary フレーム受信と AudioChunk 変換 | 実装済み | server/internal/session/audio_stream.go |
 | stt.final / tts.end 送信（server 側） | 実装済み | ws_handler.go |
-| audio.stream_open JSON Schema | **未作成** | P5-10 で対応 |
-| heartbeat イベント定義・実装 | **未実装** | P5-07 で対応 |
-| firmware C++ 実装 | **未実装** | P5-01〜P5-09 で対応 |
+| audio.stream_open JSON Schema | 実装済み | protocol/websocket/schemas/audio.stream_open.schema.json |
+| heartbeat イベント定義・実装 | 実装済み | server/internal/web/ws_handler.go、protocol/websocket/events.md |
+| firmware C++ 実装 | 実装済み（最小構成） | firmware/main.cpp、firmware/app/stackchan/session.cpp |
 | Opus エンコード/デコード | **未実装** | フェーズ 6 以降 |
 
 ### 採用技術候補（firmware）
@@ -342,3 +342,30 @@ heartbeat（firmware -> server）
 | 日付 | タスク ID | ブロック理由 | 解除条件 | オーナー | 状態 |
 | --- | --- | --- | --- | --- | --- |
 | - | - | - | - | - | - |
+
+## 7.1 フェーズ 5 完了レビュー記録
+
+- レビュー日: 2026-03-14
+- レビュー結果: フェーズ 5 の完了条件をすべて満たす
+- 確認事項:
+  - firmware 側の最小ランタイム実装（Wi-Fi、WebSocket、session、heartbeat、audio 送信）を追加済み
+  - server 側で heartbeat 受信ログを追加し、session.welcome の heartbeat_interval_ms を 15000 に設定済み
+  - WS_READ_TIMEOUT のデフォルト値を 45 秒へ調整済み（heartbeat 間隔 15 秒の 3 倍）
+  - audio.stream_open の JSON Schema と example を protocol 配下へ追加済み
+  - firmware README にセットアップ、疎通確認、トラブルシュート手順を追記済み
+  - server 側テストは `go test ./... -timeout 120s` で通過済み
+- 未解決課題:
+  - 実機での PlatformIO ビルド・書き込み・シリアル疎通は未検証
+  - Opus エンコード/デコードはフェーズ 6 で実装
+  - `audio_base64` デコードと実再生処理はフェーズ 6 で実装
+
+## 8. フェーズ 5 実績メモ
+
+- 開始日: 2026-03-14
+- 目標完了日: 2026-03-14
+- 完了日: 2026-03-14
+- 主な学び: firmware 側を「ネットワーク / プロトコル / アプリ状態機械」に分離したことで、接続管理と音声送信フローを段階導入しやすくなった
+- 次フェーズへの持ち越し:
+  - Opus エンコード/デコード導入
+  - `tts.end` の audio_base64 をデコードして M5Stack スピーカー再生
+  - m5stack-avatar との連携（リップシンク、表情同期）

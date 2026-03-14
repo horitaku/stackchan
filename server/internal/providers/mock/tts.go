@@ -21,11 +21,9 @@ func (m *TTS) Synthesize(_ context.Context, req providers.TTSRequest) (providers
 	if text == "" {
 		return providers.TTSResult{}, providers.NewError(m.Name(), providers.CodeInvalidInput, "tts input text is empty", false, nil)
 	}
-	durationMs := len([]rune(text)) * 70
-	if durationMs < 300 {
-		durationMs = 300
-	}
-	const sampleRateHz = 16000
+	// Firmware 受信バッファ上限を超えないよう、フェーズ 6 の mock 音声は短尺固定にします。
+	const durationMs = 300
+	const sampleRateHz = 8000
 
 	pcmBytes := makeSinePCM16(durationMs, sampleRateHz, 440.0)
 	return providers.TTSResult{

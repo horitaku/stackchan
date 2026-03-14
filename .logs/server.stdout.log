@@ -1,0 +1,16 @@
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /healthz                  --> main.main.func1 (3 handlers)
+[GIN-debug] GET    /ws                       --> github.com/stackchan/server/internal/web.(*WSHandler).Handle-fm (3 handlers)
+{"level":"info","addr":":8080","time":"2026-03-15T08:38:12+09:00","message":"starting stackchan server"}
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080
+{"level":"info","session_id":"ef8d3c92-099c-4210-9237-8b29672cf588","time":"2026-03-15T08:38:19+09:00","message":"WebSocket connection established"}
+{"level":"info","session_id":"ef8d3c92-099c-4210-9237-8b29672cf588","device_id":"stackchan-cores3-01","client_type":"firmware","time":"2026-03-15T08:38:19+09:00","message":"session.hello accepted"}
+{"level":"info","session_id":"ef8d3c92-099c-4210-9237-8b29672cf588","uptime_ms":146331,"rssi":-43,"time":"2026-03-15T08:38:34+09:00","message":"heartbeat received"}
+{"level":"info","session_id":"ef8d3c92-099c-4210-9237-8b29672cf588","uptime_ms":161335,"rssi":-41,"time":"2026-03-15T08:38:49+09:00","message":"heartbeat received"}
+{"level":"info","session_id":"ef8d3c92-099c-4210-9237-8b29672cf588","uptime_ms":176339,"rssi":-41,"time":"2026-03-15T08:39:04+09:00","message":"heartbeat received"}
+{"level":"info","session_id":"ef8d3c92-099c-4210-9237-8b29672cf588","uptime_ms":191343,"rssi":-44,"time":"2026-03-15T08:39:19+09:00","message":"heartbeat received"}

@@ -3,21 +3,6 @@
 ## 1. Scope
 
 この文書は Stackchan のプロトコル v0 における WebSocket イベント契約を定義します。
-対象は次のイベントセットです（フェーズ 4 で拡張）。
-
-- session.hello
-- session.welcome
-- error
-- audio.chunk
-- audio.end
-- audio.stream_open （フェーズ 4 追加）
-- stt.final （フェーズ 4 追加）
-- tts.end （フェーズ 4 追加）
-# WebSocket Event Contracts (Protocol v0)
-
-## 1. Scope
-
-この文書は Stackchan のプロトコル v0 における WebSocket イベント契約を定義します。
 対象は次のイベントセットです（フェーズ 5 で拡張）。
 
 - session.hello
@@ -160,18 +145,6 @@
 - Direction: server -> firmware
 - Purpose: TTS 合成が完了した音声データと再生メタデータを通知する
 - JSON Schema: protocol/websocket/schemas/tts.end.schema.json
-- Payload fields:
-  - request_id: string (required) — stt.final の request_id と一致
-  - audio_base64: string (required) — Base64 エンコードされた音声データ
-  - duration_ms: integer (required, minimum: 1)
-  - sample_rate_hz: integer (required, enum: 8000, 16000, 22050, 24000, 44100, 48000)
-  - codec: string (required, enum: opus, pcm)
-- 将来候補: `tts.chunk`（音声ストリーミング配信）
-### 5.3 tts.end
-
-- Direction: server -> firmware
-- Purpose: TTS 合成が完了した音声データと再生メタデータを通知する
-- JSON Schema: `protocol/websocket/schemas/tts.end.schema.json`
 - Payload fields:
   - request_id: string (required) — stt.final の request_id と一致
   - audio_base64: string (required) — Base64 エンコードされた音声データ

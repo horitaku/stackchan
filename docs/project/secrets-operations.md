@@ -31,21 +31,21 @@
 
 - `py -m platformio run -e stackchan_cores3` 実行時に依存取得で停止する
 - エラーメッセージ例:
-	- `self-signed certificate in certificate chain`
-	- `SSL: CERTIFICATE_VERIFY_FAILED`
+  - `self-signed certificate in certificate chain`
+  - `SSL: CERTIFICATE_VERIFY_FAILED`
 
 ### 一時対応（開発継続用）
 
 - PlatformIO 設定で proxy 証明書の厳格検証を無効化する
-	- `py -m platformio settings set enable_proxy_strict_ssl No`
+  - `py -m platformio settings set enable_proxy_strict_ssl No`
 - その後に再実行する
-	- `py -m platformio run -e stackchan_cores3`
+  - `py -m platformio run -e stackchan_cores3`
 
 ### 恒久対応（推奨）
 
 - 企業プロキシのルート証明書を OS / Python 環境へ正しく配布する
 - CA 配布後に `enable_proxy_strict_ssl` を `Yes` へ戻す
-	- `py -m platformio settings set enable_proxy_strict_ssl Yes`
+  - `py -m platformio settings set enable_proxy_strict_ssl Yes`
 
 ### 運用ルール
 

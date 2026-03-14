@@ -10,8 +10,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/stackchan/server/internal/conversation"
 	"github.com/stackchan/server/internal/logging"
 	"github.com/stackchan/server/internal/protocol"
+	"github.com/stackchan/server/internal/providers"
 	"github.com/stackchan/server/internal/session"
 )
 
@@ -25,15 +27,33 @@ type WSHandler struct {
 	manager         *session.Manager
 	readTimeoutSec  int
 	writeTimeoutSec int
+	orchestrator    *conversation.Orchestrator
+}
+
+type audioChunkPayload struct {
+	StreamID        string `json:"stream_id"`
+	ChunkIndex      int    `json:"chunk_index"`
+	Codec           string `json:"codec"`
+	SampleRateHz    int    `json:"sample_rate_hz"`
+	FrameDurationMs int    `json:"frame_duration_ms"`
+	ChannelCount    int    `json:"channel_count"`
+	DataBase64      string `json:"data_base64"`
+}
+
+type audioEndPayload struct {
+	StreamID        string `json:"stream_id"`
+	FinalChunkIndex int    `json:"final_chunk_index"`
+	Reason          string `json:"reason,omitempty"`
 }
 
 // NewWSHandler は WSHandler を初期化して返します。
 // readTimeoutSec / writeTimeoutSec に 0 を指定するとタイムアウトなしになります。
-func NewWSHandler(manager *session.Manager, readTimeoutSec, writeTimeoutSec int) *WSHandler {
+func NewWSHandler(manager *session.Manager, readTimeoutSec, writeTimeoutSec int, orchestrator *conversation.Orchestrator) *WSHandler {
 	return &WSHandler{
 		manager:         manager,
 		readTimeoutSec:  readTimeoutSec,
 		writeTimeoutSec: writeTimeoutSec,
+		orchestrator:    orchestrator,
 	}
 }
 
@@ -143,6 +163,45 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 		}
 		if res.Fatal {
 			return true
+		}
+
+	case "audio.chunk":
+		var payload audioChunkPayload
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "failed to parse audio.chunk payload", false, &env.Type, &env.Sequence)
+			return false
+		}
+		if payload.StreamID == "" || payload.Codec == "" || payload.DataBase64 == "" || payload.SampleRateHz <= 0 || payload.FrameDurationMs <= 0 || payload.ChannelCount <= 0 {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "audio.chunk payload is invalid", false, &env.Type, &env.Sequence)
+			return false
+		}
+		s.AddAudioChunk(providers.AudioChunk{
+			StreamID:        payload.StreamID,
+			ChunkIndex:      payload.ChunkIndex,
+			Codec:           payload.Codec,
+			SampleRateHz:    payload.SampleRateHz,
+			FrameDurationMs: payload.FrameDurationMs,
+			ChannelCount:    payload.ChannelCount,
+			DataBase64:      payload.DataBase64,
+		})
+
+	case "audio.end":
+		var payload audioEndPayload
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "failed to parse audio.end payload", false, &env.Type, &env.Sequence)
+			return false
+		}
+		if payload.StreamID == "" {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "audio.end stream_id is required", false, &env.Type, &env.Sequence)
+			return false
+		}
+		if h.orchestrator != nil {
+			chunks := s.ConsumeAudioStream(payload.StreamID)
+			if _, err := h.orchestrator.ProcessAudioStream(ctx, s.ID, payload.StreamID, chunks); err != nil {
+				code, message, retryable := providers.ToProtocolError(err)
+				h.writeError(conn, s, code, message, retryable, &env.Type, &env.Sequence)
+				return false
+			}
 		}
 
 	default:

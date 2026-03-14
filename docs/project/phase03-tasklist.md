@@ -28,18 +28,18 @@
 
 | ID | タスク | 成果物 | 依存 | 優先度 | 担当 | 見積 | ステータス | 開始日 | 完了日 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| P3-01 | Provider 境界の責務を定義する | server/internal/providers の設計メモ、責務分離方針 | - | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P3-02 | STT、LLM、TTS インターフェースを定義する | server/internal/providers 配下の interface 定義 | P3-01 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P3-03 | Provider 設定と依存注入を実装する | server/cmd/stackchan-server/main.go、初期化コード | P3-02 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P3-04 | mock STT Provider を実装する | mock STT 実装、テスト用固定応答 | P3-02 | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P3-05 | mock LLM Provider を実装する | mock LLM 実装、テスト用応答生成 | P3-02 | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P3-06 | mock TTS Provider を実装する | mock TTS 実装、疑似音声出力メタデータ | P3-02 | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P3-07 | Provider 呼び出しポリシーを実装する | timeout、retry、context cancel の共通ラッパー | P3-03、P3-04、P3-05、P3-06 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P3-08 | Provider エラー変換を実装する | provider エラーコードと protocol error マッピング | P3-07 | 高 | Copilot | 0.5 日 | Planned | - | - |
-| P3-09 | 最小会話オーケストレーションを実装する | session 後の最小 pipeline（STT -> LLM -> TTS） | P3-04、P3-05、P3-06、P3-08 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P3-10 | Provider 境界の自動テストを追加する | interface 契約テスト、失敗系テスト、統合テスト | P3-09 | 高 | Copilot | 1.0 日 | Planned | - | - |
-| P3-11 | フェーズ 4 引き継ぎ事項を整理する | 音声入力受け入れに向けた前提、未決事項メモ | P3-07 から P3-10 | 中 | Copilot | 0.5 日 | Planned | - | - |
-| P3-12 | フェーズ 3 完了レビューを実施する | レビュー記録、未解決課題リスト | P3-01 から P3-11 | 中 | Copilot | 0.5 日 | Planned | - | - |
+| P3-01 | Provider 境界の責務を定義する | server/internal/providers の設計メモ、責務分離方針 | - | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-02 | STT、LLM、TTS インターフェースを定義する | server/internal/providers 配下の interface 定義 | P3-01 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-03 | Provider 設定と依存注入を実装する | server/cmd/stackchan-server/main.go、初期化コード | P3-02 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-04 | mock STT Provider を実装する | mock STT 実装、テスト用固定応答 | P3-02 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-05 | mock LLM Provider を実装する | mock LLM 実装、テスト用応答生成 | P3-02 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-06 | mock TTS Provider を実装する | mock TTS 実装、疑似音声出力メタデータ | P3-02 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-07 | Provider 呼び出しポリシーを実装する | timeout、retry、context cancel の共通ラッパー | P3-03、P3-04、P3-05、P3-06 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-08 | Provider エラー変換を実装する | provider エラーコードと protocol error マッピング | P3-07 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-09 | 最小会話オーケストレーションを実装する | session 後の最小 pipeline（STT -> LLM -> TTS） | P3-04、P3-05、P3-06、P3-08 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-10 | Provider 境界の自動テストを追加する | interface 契約テスト、失敗系テスト、統合テスト | P3-09 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-11 | フェーズ 4 引き継ぎ事項を整理する | 音声入力受け入れに向けた前提、未決事項メモ | P3-07 から P3-10 | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P3-12 | フェーズ 3 完了レビューを実施する | レビュー記録、未解決課題リスト | P3-01 から P3-11 | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
 
 ## 5. タスク詳細（実行手順）
 
@@ -212,17 +212,23 @@ server/
 
 ## 7.1 フェーズ 3 完了レビュー記録
 
-- レビュー日: -
-- レビュー結果: -
+- レビュー日: 2026-03-14
+- レビュー結果: フェーズ 3 の完了条件をすべて満たす
 - 確認事項:
-  - -
+  - STT、LLM、TTS の interface を server/internal/providers に定義済み
+  - mock provider（STT、LLM、TTS）を追加し、DI で起動時に注入可能化
+  - timeout、retry、context cancel を共通ラッパーで実装済み
+  - provider エラーを protocol error へ変換するマッピングを実装済み
+  - audio.chunk / audio.end 受信時に最小オーケストレーションを接続済み
+  - go test ./... -v -timeout 120s で自動テスト通過済み
 - 未解決課題:
-  - -
+  - audio.chunk のバイナリフレーム転送（WebSocket binary）は未着手
+  - 音声キュー滞留時間メトリクスと request_id 完全連携はフェーズ 4 で実装する
 
 ## 8. フェーズ 3 実績メモ
 
-- 開始日: -
-- 目標完了日: -
-- 完了日: -
-- 主な学び: -
-- 次フェーズへの持ち越し: -
+- 開始日: 2026-03-14
+- 目標完了日: 2026-03-14
+- 完了日: 2026-03-14
+- 主な学び: interface-first で provider 境界を先に固定すると、DI・モック・失敗系テストを同時に安全導入できる
+- 次フェーズへの持ち越し: audio バイナリ転送、ストリーム単位メトリクス、Voice 入出力品質の検証強化

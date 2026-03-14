@@ -8,11 +8,14 @@ import (
 
 // error コード定数です（protocol/websocket/events.md § 4 Error Handling 参照）。
 const (
-	ErrCodeInvalidMessage     = "invalid_message"
-	ErrCodeUnsupportedVersion = "unsupported_version"
-	ErrCodeInvalidSequence    = "invalid_sequence"
-	ErrCodeInvalidPayload     = "invalid_payload"
-	ErrCodeSessionRequired    = "session_required"
+	ErrCodeInvalidMessage      = "invalid_message"
+	ErrCodeUnsupportedVersion  = "unsupported_version"
+	ErrCodeInvalidSequence     = "invalid_sequence"
+	ErrCodeInvalidPayload      = "invalid_payload"
+	ErrCodeSessionRequired     = "session_required"
+	ErrCodeProviderUnavailable = "provider_unavailable"
+	ErrCodeProviderTimeout     = "provider_timeout"
+	ErrCodeProviderFailed      = "provider_failed"
 )
 
 // ErrorPayload は error イベントの payload 定義です。

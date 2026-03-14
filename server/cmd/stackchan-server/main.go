@@ -7,10 +7,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/stackchan/server/internal/conversation"
 	"github.com/stackchan/server/internal/logging"
+	"github.com/stackchan/server/internal/providers"
+	"github.com/stackchan/server/internal/providers/mock"
 	"github.com/stackchan/server/internal/session"
 	"github.com/stackchan/server/internal/web"
 )
@@ -34,7 +38,13 @@ func main() {
 
 	// セッションマネージャーと WebSocket ハンドラを初期化します
 	manager := session.NewManager()
-	wsHandler := web.NewWSHandler(manager, readTimeout, writeTimeout)
+	policy := providers.CallPolicy{
+		Timeout:     time.Duration(getEnvInt("PROVIDER_TIMEOUT_MS", 3000)) * time.Millisecond,
+		MaxAttempts: getEnvInt("PROVIDER_MAX_ATTEMPTS", 2),
+		BaseDelay:   time.Duration(getEnvInt("PROVIDER_RETRY_BASE_DELAY_MS", 100)) * time.Millisecond,
+	}
+	orchestrator := conversation.NewOrchestrator(&mock.STT{}, &mock.LLM{}, &mock.TTS{}, policy)
+	wsHandler := web.NewWSHandler(manager, readTimeout, writeTimeout, orchestrator)
 
 	r := gin.New()
 	r.Use(gin.Recovery())

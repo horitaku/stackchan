@@ -11,8 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/stackchan/server/internal/conversation"
 	"github.com/stackchan/server/internal/logging"
 	"github.com/stackchan/server/internal/protocol"
+	"github.com/stackchan/server/internal/providers"
+	"github.com/stackchan/server/internal/providers/mock"
 	"github.com/stackchan/server/internal/session"
 	"github.com/stackchan/server/internal/web"
 )
@@ -26,7 +29,7 @@ func init() {
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
 	manager := session.NewManager()
-	handler := web.NewWSHandler(manager, 0, 0) // タイムアウトなし
+	handler := web.NewWSHandler(manager, 0, 0, nil) // タイムアウトなし
 
 	r := gin.New()
 	r.GET("/ws", handler.Handle)
@@ -223,7 +226,7 @@ func TestUnsupportedVersion(t *testing.T) {
 // TestHealthCheck は HTTP /healthz が 200 を返すことを確認します。
 func TestHealthCheck(t *testing.T) {
 	manager := session.NewManager()
-	handler := web.NewWSHandler(manager, 0, 0)
+	handler := web.NewWSHandler(manager, 0, 0, nil)
 	r := gin.New()
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -241,6 +244,47 @@ func TestHealthCheck(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
+}
+
+// TestAudioEnd_ProviderErrorMapping は provider エラーが protocol error へ変換されることを確認します。
+func TestAudioEnd_ProviderErrorMapping(t *testing.T) {
+	manager := session.NewManager()
+	orchestrator := conversation.NewOrchestrator(
+		&mock.STT{},
+		&mock.LLM{},
+		&mock.TTS{},
+		providers.CallPolicy{Timeout: 500 * time.Millisecond, MaxAttempts: 1, BaseDelay: 10 * time.Millisecond},
+	)
+	handler := web.NewWSHandler(manager, 0, 0, orchestrator)
+
+	r := gin.New()
+	r.GET("/ws", handler.Handle)
+	ts := httptest.NewServer(r)
+	defer ts.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
+	conn := dialWS(t, wsURL)
+
+	// まず hello でハンドシェイク完了
+	hello := buildEnvelope(t, "session.hello", 1, map[string]any{
+		"device_id":   "test-device-001",
+		"client_type": "test_harness",
+	})
+	if err := conn.WriteMessage(websocket.TextMessage, hello); err != nil {
+		t.Fatalf("failed to send hello: %v", err)
+	}
+	_ = readEnvelope(t, conn)
+
+	// audio.end に stream_id 空を渡すと invalid_payload
+	audioEnd := buildEnvelope(t, "audio.end", 2, map[string]any{
+		"stream_id":         "",
+		"final_chunk_index": 0,
+	})
+	if err := conn.WriteMessage(websocket.TextMessage, audioEnd); err != nil {
+		t.Fatalf("failed to send audio.end: %v", err)
+	}
+	env := readEnvelope(t, conn)
+	assertErrorResponse(t, env, protocol.ErrCodeInvalidPayload)
 }
 
 // --- ヘルパー ---

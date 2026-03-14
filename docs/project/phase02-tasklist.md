@@ -28,18 +28,18 @@
 
 | ID | タスク | 成果物 | 依存 | 優先度 | 担当 | 見積 | ステータス | 開始日 | 完了日 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| P2-01 | Go モジュールとディレクトリ構成を作成する | server/go.mod、server/cmd/stackchan-server/main.go | - | 高 | TBD | 0.5 日 | Planned | - | - |
-| P2-02 | Gin HTTP サーバーをブートストラップする | Gin エンジン起動、環境変数読み込み、ヘルスチェック API | P2-01 | 高 | TBD | 0.5 日 | Planned | - | - |
-| P2-03 | WebSocket エントリーポイントを実装する | server/internal/web/ws_handler.go、接続確立と切断の基本ハンドラ | P2-02 | 高 | TBD | 1.0 日 | Planned | - | - |
-| P2-04 | エンベロープ検証を実装する | server/internal/protocol/envelope.go、受信メッセージの型・必須フィールド検証 | P2-03 | 高 | TBD | 1.0 日 | Planned | - | - |
-| P2-05 | error イベント返却を共通化する | server/internal/protocol/error.go、error コード定義と送信ヘルパー | P2-04 | 高 | TBD | 0.5 日 | Planned | - | - |
-| P2-06 | セッション管理を実装する | server/internal/session/manager.go、session_id 生成・保持・破棄 | P2-03 | 高 | TBD | 1.0 日 | Planned | - | - |
-| P2-07 | session.hello / session.welcome フローを実装する | server/internal/session/handshake.go、hello 受信→welcome 返却の振る舞い | P2-04、P2-06 | 高 | TBD | 1.0 日 | Planned | - | - |
-| P2-08 | direction ごとの sequence 管理を実装する | server/internal/protocol/sequence.go、重複・逆転検知とログ出力 | P2-04 | 高 | TBD | 0.5 日 | Planned | - | - |
-| P2-09 | 構造化ログと相関 ID を導入する | server/internal/logging、JSON 形式ログ、session_id の全レイヤー引き回し | P2-06 | 高 | TBD | 1.0 日 | Planned | - | - |
-| P2-10 | hello/welcome フローの自動テストを追加する | server/internal/session/handshake_test.go、最低 1 シナリオのエンドツーエンドテスト | P2-07、P2-08、P2-09 | 高 | TBD | 1.0 日 | Planned | - | - |
-| P2-11 | フェーズ 3 引き継ぎ事項を整理する | server/README や docs 配下の引き継ぎメモ、Provider 境界着手前提の未決事項 | P2-07 から P2-10 | 中 | TBD | 0.5 日 | Planned | - | - |
-| P2-12 | フェーズ 2 完了レビューを実施する | レビュー記録、未解決課題リスト | P2-01 から P2-11 | 中 | TBD | 0.5 日 | Planned | - | - |
+| P2-01 | Go モジュールとディレクトリ構成を作成する | server/go.mod、server/cmd/stackchan-server/main.go | - | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-02 | Gin HTTP サーバーをブートストラップする | Gin エンジン起動、環境変数読み込み、ヘルスチェック API | P2-01 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-03 | WebSocket エントリーポイントを実装する | server/internal/web/ws_handler.go、接続確立と切断の基本ハンドラ | P2-02 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-04 | エンベロープ検証を実装する | server/internal/protocol/envelope.go、受信メッセージの型・必須フィールド検証 | P2-03 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-05 | error イベント返却を共通化する | server/internal/protocol/error.go、error コード定義と送信ヘルパー | P2-04 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-06 | セッション管理を実装する | server/internal/session/manager.go、session_id 生成・保持・破棄 | P2-03 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-07 | session.hello / session.welcome フローを実装する | server/internal/session/handshake.go、hello 受信→welcome 返却の振る舞い | P2-04、P2-06 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-08 | direction ごとの sequence 管理を実装する | server/internal/protocol/sequence.go、重複・逆転検知とログ出力 | P2-04 | 高 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-09 | 構造化ログと相関 ID を導入する | server/internal/logging、JSON 形式ログ、session_id の全レイヤー引き回し | P2-06 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-10 | hello/welcome フローの自動テストを追加する | server/internal/session/handshake_test.go、最低 1 シナリオのエンドツーエンドテスト | P2-07、P2-08、P2-09 | 高 | Copilot | 1.0 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-11 | フェーズ 3 引き継ぎ事項を整理する | server/README や docs 配下の引き継ぎメモ、Provider 境界着手前提の未決事項 | P2-07 から P2-10 | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
+| P2-12 | フェーズ 2 完了レビューを実施する | レビュー記録、未解決課題リスト | P2-01 から P2-11 | 中 | Copilot | 0.5 日 | Done | 2026-03-14 | 2026-03-14 |
 
 ## 5. タスク詳細（実行手順）
 
@@ -241,10 +241,25 @@ server/
 | --- | --- | --- | --- | --- | --- |
 | - | - | - | - | - | - |
 
+## 7.1 フェーズ 2 完了レビュー記録
+
+- レビュー日: 2026-03-14
+- レビュー結果: フェーズ 2 の完了条件をすべて満たす
+- 確認事項:
+  - Go モジュール、Gin サーバー、WebSocket エントリーポイントを作成済み
+  - session.hello / session.welcome の往復動作を自動テストで確認済み
+  - エンベロープ検証、error 応答、sequence 管理を実装済み
+  - session_id を含む JSON 構造化ログを導入済み
+  - go build ./... と go test ./... -v -timeout 30s が通過済み
+- 未解決課題:
+  - audio.chunk / audio.end の実処理はフェーズ 4 で実装する
+  - heartbeat_interval_ms の既定値はフェーズ 3 以降で確定する
+  - provider 由来エラーコード体系はフェーズ 3 で拡張する
+
 ## 8. フェーズ 2 実績メモ
 
-- 開始日: -
-- 目標完了日: -
-- 完了日: -
-- 主な学び: -
-- 次フェーズへの持ち越し: -
+- 開始日: 2026-03-14
+- 目標完了日: 2026-03-14
+- 完了日: 2026-03-14
+- 主な学び: protocol first で定義した最小契約があったことで、hello/welcome と sequence 管理を薄い縦スライスとして安全に実装できた
+- 次フェーズへの持ち越し: Provider 境界の定義、heartbeat_interval_ms の運用方針、audio chunk の実処理設計

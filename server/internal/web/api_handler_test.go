@@ -17,6 +17,11 @@ import (
 
 func newAPITestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	return newAPITestServerWithVoicevox(t, "http://voicevox:50021")
+}
+
+func newAPITestServerWithVoicevox(t *testing.T, voicevoxBaseURL string) *httptest.Server {
+	t.Helper()
 	runtimeState := web.NewRuntimeState()
 	settingsStore := web.NewSettingsStore()
 	orchestrator := conversation.NewOrchestrator(
@@ -25,7 +30,7 @@ func newAPITestServer(t *testing.T) *httptest.Server {
 		&mock.TTS{},
 		providers.CallPolicy{Timeout: 2 * time.Second, MaxAttempts: 1, BaseDelay: 10 * time.Millisecond},
 	)
-	api := web.NewAPIHandler(runtimeState, settingsStore, orchestrator)
+	api := web.NewAPIHandlerWithVoicevox(runtimeState, settingsStore, orchestrator, voicevoxBaseURL)
 
 	r := gin.New()
 	group := r.Group("/api")
@@ -125,5 +130,57 @@ func TestRunPipelineTest(t *testing.T) {
 	}
 	if result["request_id"] == "" {
 		t.Fatal("expected request_id in result")
+	}
+}
+
+func TestRunVoicevoxUITest(t *testing.T) {
+	voicevox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/audio_query":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"accent_phrases":[],"speedScale":1.0,"pitchScale":0.0,"intonationScale":1.0,"volumeScale":1.0}`))
+		case "/synthesis":
+			w.Header().Set("Content-Type", "audio/wav")
+			_, _ = w.Write([]byte("RIFFmockwav"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer voicevox.Close()
+
+	ts := newAPITestServerWithVoicevox(t, voicevox.URL)
+	body, _ := json.Marshal(map[string]any{"text": "てすと", "speaker": 1})
+
+	resp, err := http.Post(ts.URL+"/api/tests/voicevox/ui", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to run voicevox ui test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if result["audio_base64"] == "" {
+		t.Fatal("expected audio_base64 in result")
+	}
+}
+
+func TestRunVoicevoxStackchanTest_WSHandlerUnavailable(t *testing.T) {
+	ts := newAPITestServer(t)
+	body, _ := json.Marshal(map[string]any{"text": "てすと", "speaker": 1})
+
+	resp, err := http.Post(ts.URL+"/api/tests/voicevox/stackchan", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to run voicevox stackchan test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
 	}
 }

@@ -1,0 +1,18 @@
+# VCS
+.git
+.gitignore
+
+# Node artifacts
+**/node_modules
+**/dist
+
+# Python artifacts
+**/__pycache__
+**/*.pyc
+
+# Logs
+**/.logs
+**/*.log
+
+# Editor artifacts
+.vscode

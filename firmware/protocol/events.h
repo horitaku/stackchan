@@ -28,6 +28,8 @@ constexpr const char* AUDIO_END          = "audio.end";
 constexpr const char* SESSION_WELCOME    = "session.welcome";
 /// STT 処理完了：認識テキストを通知する
 constexpr const char* STT_FINAL          = "stt.final";
+/// TTS 音声チャンクを通知する
+constexpr const char* TTS_CHUNK          = "tts.chunk";
 /// TTS 合成完了：音声データと再生メタデータを通知する
 constexpr const char* TTS_END            = "tts.end";
 /// 表情状態を更新する

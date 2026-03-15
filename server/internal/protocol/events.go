@@ -10,14 +10,25 @@ type STTFinalPayload struct {
 	Confidence float64 `json:"confidence,omitempty"`
 }
 
+// TTSChunkPayload は tts.chunk イベントのペイロードです（server -> firmware）。
+// TTS 音声本体を小さなチャンクへ分割して配信します。
+type TTSChunkPayload struct {
+	RequestID   string `json:"request_id"`
+	ChunkIndex  int    `json:"chunk_index"`
+	TotalChunks int    `json:"total_chunks"`
+	AudioBase64 string `json:"audio_base64"`
+}
+
 // TTSEndPayload は tts.end イベントのペイロードです（server -> firmware）。
-// TTS 合成が完了した音声データと再生メタデータを格納します。
+// TTS 合成が完了した再生メタデータを格納します。
+// audio_base64 は後方互換 fallback 用にのみ使用します。
 type TTSEndPayload struct {
 	RequestID    string `json:"request_id"`
-	AudioBase64  string `json:"audio_base64"`
+	AudioBase64  string `json:"audio_base64,omitempty"`
 	DurationMs   int    `json:"duration_ms"`
 	SampleRateHz int    `json:"sample_rate_hz"`
 	Codec        string `json:"codec"`
+	TotalChunks  int    `json:"total_chunks,omitempty"`
 }
 
 // BinaryStreamOpenPayload は audio.stream_open イベントのペイロードです（firmware -> server）。

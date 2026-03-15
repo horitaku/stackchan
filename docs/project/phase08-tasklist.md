@@ -16,6 +16,16 @@
 | P8-05 | WebSocket binary Opus パスの統合を進める | binary 音声フレーム受信処理、検証ログ、互換性メモ | 中 | 低遅延化に重要だが、現行 PCM パスで最小運用は可能なため | Planned |
 | P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Planned |
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
+| P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Planned |
+| P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Planned |
+| P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Planned |
+| P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Done |
+| P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Done |
+| P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Done |
+| P8-14 | tts.chunk を音声フレーム単位へ再設計する | `stream_id` / `chunk_index` / `sent_at or playout_ts` / `frame_duration_ms` / `samples_per_chunk` を含む payload 定義、schema、互換性メモ | 中 | 現在の固定 byte 分割では低遅延再生と欠落検知に不向きなため | Planned |
+| P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Planned |
+| P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Planned |
+| P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Planned |
 
 ## 2.1 実行メモ（2026-03-15）
 
@@ -30,8 +40,8 @@
 
 ## 2.2 優先順メモ（2026-03-15 更新）
 
-- ローカル環境に Docker が未導入のため、`P8-01` のローカル動作検証は後回しにします。
-- 先行着手は `P8-07`（firmware の M5Stack-Avatar 顔表示）とし、デバイス表示体験を先に固めます。
+- ローカル環境に Docker を導入し、`P8-01` のローカル動作検証を再開しました。
+- `P8-07` 先行で確立したデバイス体験を維持しつつ、phase8 の運用タスクを順次前倒しします。
 
 ## 2.3 P8-07 実行メモ（2026-03-15）
 
@@ -39,6 +49,102 @@
 - `firmware/app/stackchan/session.cpp` で Avatar 初期化（`init`）と neutral 顔の起動表示を追加しました。
 - `avatar.expression` 受信時に m5stack-avatar の `Expression` へ変換して反映する処理を追加しました。
 - `tts.end` 再生中の lip level を `setMouthOpenRatio` へ接続し、口パクを描画へ反映しました。
+
+## 2.4 追加タスクの着手条件（2026-03-15）
+
+- P8-08 interrupt 正式化
+  - `protocol/websocket/events.md` にイベント定義の方向性と error semantics を追記済みであること
+  - `protocol/websocket/schemas/` と `protocol/examples/` に追加先の配置方針が合意済みであること
+- P8-09 firmware 状態遷移
+  - `docs/architecture/conversation-state-machine.md` を基準仕様として採用済みであること
+  - 既存の再生/表情実装（P8-07）を壊さない最小統合方針を確認済みであること
+- P8-10 Opus 計測項目
+  - `P8-05` の binary Opus パス統合タスクと連携し、計測点（受信時刻、再生開始時刻）が取得可能であること
+  - `runtime_metrics` 永続化（P8-04）との項目名・単位を先に合意していること
+- P8-11 Voicevox 前倒し整備
+  - `infra/docker/docker-compose.yml` にサービス追加可能なネットワーク/ポート方針が合意済みであること
+  - server 側の `VOICEVOX_BASE_URL` 設定値と compose サービス名の対応を確認済みであること
+- P8-12 WebUI UI 単体テスト
+  - `P8-11` 完了後に Voicevox API への疎通がローカル compose 上で確認できていること
+  - WebUI 側でテスト入力と結果表示の最小 UI 追加方針が合意済みであること
+- P8-13 WebUI Stackchan 連携テスト
+  - `P8-12` の UI 単体テストで音声生成の成功が確認できていること
+  - Stackchan 接続状態を確認する API（または既存 runtime overview）と連携判定条件が合意済みであること
+
+## 2.5 P8-01 ローカル再実行メモ（2026-03-15）
+
+- `mise` から Docker compose を操作できるよう、次のタスクを追加しました。
+  - `infra:build`
+  - `infra:up`
+  - `infra:down`
+  - `infra:ps`
+  - `infra:logs`
+- Docker build の `vite: Permission denied` は、`server/webui/node_modules` が build context に含まれていたことが原因でした。
+  - リポジトリルートに `.dockerignore` を追加し、`**/node_modules` と `**/dist` を除外しました。
+- 再実行結果:
+  - `mise run infra:up` 成功
+  - `mise run infra:ps` で `stackchan-server` / `stackchan-db` の起動を確認
+  - `mise run server:healthz` で `STATUS=200` を確認
+
+## 2.6 P8-11 Voicevox 前倒し整備メモ（2026-03-15）
+
+- `infra/docker/docker-compose.yml` に `voicevox` サービスを追加しました。
+  - image: `voicevox/voicevox_engine:cpu-ubuntu20.04-latest`
+  - port: `50021:50021`
+- `stackchan-server` の `depends_on` に `voicevox` を追加しました（`service_started`）。
+- 検証結果:
+  - `mise run infra:up` で `stackchan-voicevox` を含む全サービス起動に成功
+  - `mise run infra:ps` で `stackchan-voicevox` の稼働を確認
+  - `curl -fsS http://127.0.0.1:50021/version` が `"latest"` を返却
+  - `mise run server:healthz` が `STATUS=200` を返却
+
+## 2.7 P8-12 WebUI UI 単体テスト導線メモ（2026-03-15）
+
+- server に `POST /api/tests/voicevox/ui` を追加し、Voicevox の `audio_query` / `synthesis` を呼び出して音声を返す API を実装しました。
+- WebUI に Voicevox UI 単体テストパネルを追加しました。
+  - 入力テキスト
+  - speaker 指定
+  - テスト実行
+  - 生成音声の即時再生
+  - JSON 結果表示
+- `.env` を作成し、ローカル検証用の `VOICEVOX_BASE_URL` と `DATABASE_URL` を設定しました。
+- 検証結果:
+  - `go test ./...` 成功
+  - `npm run build` 成功
+  - `POST /api/tests/voicevox/ui` が `audio_base64` を返却することを確認
+
+## 2.8 P8-13 WebUI Stackchan 連携テスト導線メモ（2026-03-15）
+
+- server に `POST /api/tests/voicevox/stackchan` を追加しました。
+  - Voicevox で生成した音声を接続中の Stackchan セッションへ `tts.end` として送信します。
+  - 視認性向上のため `avatar.expression` と `motion.play` も同時送信します。
+- WebUI に Stackchan 連携テストパネルを追加しました。
+  - 入力テキスト
+  - speaker / expression / motion
+  - 連携テスト実行
+  - JSON 結果表示
+- 実行時の確認結果:
+  - `go test ./...` 成功
+  - `npm run build` 成功
+  - Stackchan 未接続時は `{"error":"no active Stackchan session is connected"}` を返却
+  - 接続断時は write エラーを返却し、server 側でアクティブセッションを自動クリア
+
+## 2.9 音声 chunking 次段階の引き継ぎ事項（2026-03-15）
+
+- 現在の `tts.chunk` は「巨大な `tts.end` を避けるための安全配送」が主目的であり、低遅延ストリーミング再生はまだ未着手です。
+- 現状の制約:
+  - chunk は音声フレーム単位ではなく固定 byte 分割です。
+  - firmware は `tts.chunk` を全受信してから `tts.end` で再生開始します。
+  - jitter 吸収、欠落補完、playout timestamp 管理は未実装です。
+- 次段階で優先する項目:
+  - `tts.chunk` に `stream_id`、`frame_duration_ms`、`samples_per_chunk`、`sent_at` または `playout_ts` を追加する
+  - 20ms 単位を基本とした音声フレーム設計へ寄せる
+  - firmware に 60〜120ms の事前バッファを導入する
+  - low-water / high-water を持つリングバッファ再生へ移行する
+  - 欠落時は停止待ちではなく concealment（減衰コピーまたは無音補完）を先に導入する
+- 補足:
+  - 現 transport は WebSocket/TCP なので、初期優先度は FEC よりも sequence/timestamp と事前バッファです。
+  - browser/WebUI 側の AudioWorklet 相当の議論は、firmware では「通信受信と再生消費の分離タスク化」に読み替えて扱います。
 
 ## 3. フェーズ 7 からの前提条件
 

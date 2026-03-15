@@ -143,13 +143,18 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid rgba(19, 34, 61, 0.2);
   border-radius: 10px;
   padding: 8px 10px;
   font: inherit;
   background: #ffffff;
+}
+
+textarea {
+  resize: vertical;
 }
 
 .checkbox {
@@ -188,6 +193,11 @@ select {
   color: #f7f8fa;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.84rem;
+}
+
+.audio-preview {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .alerts {

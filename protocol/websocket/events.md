@@ -143,21 +143,32 @@
   - confidence: number (optional, 0–1)
 - 将来候補: `stt.partial`（部分認識結果のストリーミング）
 
-### 5.3 tts.end
+### 5.3 tts.chunk
 
 - Direction: server -> firmware
-- Purpose: TTS 合成が完了した音声データと再生メタデータを通知する
+- Purpose: TTS 音声データ本体を小さなチャンクへ分割して通知する
+- JSON Schema: protocol/websocket/schemas/tts.chunk.schema.json
+- Payload fields:
+  - request_id: string (required)
+  - chunk_index: integer (required, minimum: 0)
+  - total_chunks: integer (required, minimum: 1)
+  - audio_base64: string (required) — Base64 エンコード済みの音声チャンク
+
+### 5.4 tts.end
+
+- Direction: server -> firmware
+- Purpose: TTS 合成が完了した再生メタデータを通知する
 - JSON Schema: protocol/websocket/schemas/tts.end.schema.json
 - Payload fields:
   - request_id: string (required) — stt.final の request_id と一致
-  - audio_base64: string (required) — Base64 エンコードされた音声データ
   - duration_ms: integer (required, minimum: 1)
   - sample_rate_hz: integer (required, enum: 8000, 16000, 22050, 24000, 44100, 48000)
   - codec: string (required, enum: opus, pcm)
+  - total_chunks: integer (optional, minimum: 1)
+- Backward compatibility: `audio_base64` は fallback 用に optional で残すが、標準経路では `tts.chunk` で音声本体を送る
 - フェーズ 8 以降の標準経路では `codec=opus` を優先し、`codec=pcm` は開発互換で維持する
-- 将来候補: `tts.chunk`（音声ストリーミング配信）
 
-### 5.4 heartbeat
+### 5.5 heartbeat
 
 - Direction: firmware -> server
 - Purpose: 接続維持のためのキープアライブ通知。`session.welcome` の `heartbeat_interval_ms` 間隔で送信する
@@ -167,7 +178,7 @@
 - サーバーは heartbeat 受信時に接続タイムアウトをリセットする
 - `WS_READ_TIMEOUT` は `heartbeat_interval_ms × 3` 以上に設定すること（デフォルト 45s = 15s × 3）
 
-### 5.5 avatar.expression
+### 5.6 avatar.expression
 
 - Direction: server -> firmware
 - Purpose: 発話内容に応じてアバター表情を更新する
@@ -178,7 +189,7 @@
   - expression: string (required, enum: neutral, happy, sad, surprised)
   - intensity: number (optional, 0.0–1.0)
 
-### 5.6 motion.play
+### 5.7 motion.play
 
 - Direction: server -> firmware
 - Purpose: サーボ等の最小モーション再生を指示する

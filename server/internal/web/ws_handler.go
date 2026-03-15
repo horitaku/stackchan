@@ -3,9 +3,12 @@
 package web
 
 import (
+	"encoding/base64"
 	"context"
+	"fmt"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,7 +34,11 @@ type WSHandler struct {
 	orchestrator    *conversation.Orchestrator
 	runtimeState    *RuntimeState
 	mu              sync.Mutex
+	connections     map[string]*websocket.Conn
+	activeSessionID string
 }
+
+const ttsChunkByteSize = 512
 
 type audioChunkPayload struct {
 	StreamID        string `json:"stream_id"`
@@ -65,6 +72,7 @@ func NewWSHandler(manager *session.Manager, readTimeoutSec, writeTimeoutSec int,
 		writeTimeoutSec: writeTimeoutSec,
 		orchestrator:    orchestrator,
 		runtimeState:    runtimeState,
+		connections:     make(map[string]*websocket.Conn),
 	}
 }
 
@@ -88,8 +96,17 @@ func (h *WSHandler) Handle(c *gin.Context) {
 
 	log.Info().Msg("WebSocket connection established")
 	h.runtimeState.OnConnected(s.ID)
+	h.mu.Lock()
+	h.connections[s.ID] = conn
+	h.mu.Unlock()
 	defer func() {
 		h.manager.Delete(s.ID)
+		h.mu.Lock()
+		delete(h.connections, s.ID)
+		if h.activeSessionID == s.ID {
+			h.activeSessionID = ""
+		}
+		h.mu.Unlock()
 		h.runtimeState.OnDisconnected()
 		conn.Close()
 		log.Info().Msg("WebSocket connection closed")
@@ -179,6 +196,11 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 	switch env.Type {
 	case "session.hello":
 		res := session.HandleHello(ctx, s, env)
+		if s.State == session.StateHandshaked {
+			h.mu.Lock()
+			h.activeSessionID = s.ID
+			h.mu.Unlock()
+		}
 		if res.Response != nil {
 			if err := conn.WriteMessage(websocket.TextMessage, res.Response); err != nil {
 				log.Error().Err(err).Msg("failed to write session.hello response")
@@ -281,15 +303,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 				return true // 送信失敗は致命的（接続クローズ）
 			}
 
-			// tts.end を送信します
-			ttsPayload := protocol.TTSEndPayload{
-				RequestID:    result.RequestID,
-				AudioBase64:  result.TTSAudioBase64,
-				DurationMs:   result.TTSDuration,
-				SampleRateHz: result.TTSSampleHz,
-				Codec:        "pcm",
-			}
-			if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
+			if err := h.sendTTSAudio(conn, s, result.RequestID, result.TTSAudioBase64, result.TTSDuration, result.TTSSampleHz, "pcm"); err != nil {
 				log.Error().Err(err).Msg("failed to send tts.end")
 				h.runtimeState.OnOutputError()
 				return true
@@ -332,6 +346,47 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 	}
 
 	return false
+}
+
+func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, requestID, audioBase64 string, durationMs, sampleRateHz int, codec string) error {
+	audioBytes, err := base64.StdEncoding.DecodeString(audioBase64)
+	if err != nil {
+		return fmt.Errorf("failed to decode tts audio base64 for chunking: %w", err)
+	}
+
+	totalChunks := 0
+	if len(audioBytes) > 0 {
+		totalChunks = (len(audioBytes) + ttsChunkByteSize - 1) / ttsChunkByteSize
+	}
+
+	for index := 0; index < totalChunks; index++ {
+		start := index * ttsChunkByteSize
+		end := start + ttsChunkByteSize
+		if end > len(audioBytes) {
+			end = len(audioBytes)
+		}
+		payload := protocol.TTSChunkPayload{
+			RequestID:   requestID,
+			ChunkIndex:  index,
+			TotalChunks: totalChunks,
+			AudioBase64: base64.StdEncoding.EncodeToString(audioBytes[start:end]),
+		}
+		if err := h.sendEvent(conn, s, "tts.chunk", payload); err != nil {
+			return err
+		}
+	}
+
+	ttsPayload := protocol.TTSEndPayload{
+		RequestID:    requestID,
+		DurationMs:   durationMs,
+		SampleRateHz: sampleRateHz,
+		Codec:        codec,
+		TotalChunks:  totalChunks,
+	}
+	if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
+		return err
+	}
+	return nil
 }
 
 // writeError は error メッセージを生成して WebSocket に送信します。
@@ -388,6 +443,77 @@ func (h *WSHandler) sendEvent(conn *websocket.Conn, s *session.Session, msgType 
 		conn.SetWriteDeadline(time.Now().Add(time.Duration(h.writeTimeoutSec) * time.Second))
 	}
 	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// SendTTSTestToActive は現在アクティブな handshaked セッションへ tts.end を送信します。
+// 連携テストで視認性を高めるため avatar.expression と motion.play も続けて送信します。
+func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationMs, sampleRateHz int, codec, expression, motion string) (string, error) {
+	h.mu.Lock()
+	sessionID := h.activeSessionID
+	conn := h.connections[sessionID]
+	h.mu.Unlock()
+
+	if sessionID == "" || conn == nil {
+		return "", fmt.Errorf("no active Stackchan session is connected")
+	}
+
+	s := h.manager.Get(sessionID)
+	if s == nil {
+		return "", fmt.Errorf("active Stackchan session is no longer available")
+	}
+
+	if sampleRateHz <= 0 {
+		sampleRateHz = 24000
+	}
+	if strings.TrimSpace(codec) == "" {
+		codec = "pcm"
+	}
+
+	if err := h.sendTTSAudio(conn, s, requestID, audioBase64, durationMs, sampleRateHz, codec); err != nil {
+		h.mu.Lock()
+		if h.activeSessionID == sessionID {
+			h.activeSessionID = ""
+		}
+		delete(h.connections, sessionID)
+		h.mu.Unlock()
+		return "", err
+	}
+
+	if expression = strings.TrimSpace(expression); expression != "" {
+		exprPayload := protocol.AvatarExpressionPayload{
+			RequestID:  requestID,
+			Expression: expression,
+			Intensity:  0.8,
+		}
+		if err := h.sendEvent(conn, s, "avatar.expression", exprPayload); err != nil {
+			h.mu.Lock()
+			if h.activeSessionID == sessionID {
+				h.activeSessionID = ""
+			}
+			delete(h.connections, sessionID)
+			h.mu.Unlock()
+			return "", err
+		}
+	}
+
+	if motion = strings.TrimSpace(motion); motion != "" {
+		motionPayload := protocol.MotionPlayPayload{
+			RequestID: requestID,
+			Motion:    motion,
+			Speed:     1.0,
+		}
+		if err := h.sendEvent(conn, s, "motion.play", motionPayload); err != nil {
+			h.mu.Lock()
+			if h.activeSessionID == sessionID {
+				h.activeSessionID = ""
+			}
+			delete(h.connections, sessionID)
+			h.mu.Unlock()
+			return "", err
+		}
+	}
+
+	return sessionID, nil
 }
 
 // handleBinaryFrame はバイナリ WebSocket フレームを Session.AddBinaryAudioFrame 経由で処理します。

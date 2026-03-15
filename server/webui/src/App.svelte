@@ -25,6 +25,15 @@
   let settingsMessage = "";
   let overviewMessage = "";
   let pipelineTestResult = "未実行";
+  let voicevoxText = "こんにちは、Stackchan の Voicevox 単体テストです。";
+  let voicevoxSpeaker = 1;
+  let voicevoxResult = "未実行";
+  let voicevoxAudioSrc = "";
+  let stackchanText = "こんにちは、Stackchan 連携テストです。";
+  let stackchanSpeaker = 1;
+  let stackchanExpression = "happy";
+  let stackchanMotion = "nod";
+  let stackchanResult = "未実行";
   let timerId;
 
   const fmtMs = (v) => `${v ?? 0} ms`;
@@ -85,6 +94,43 @@
       await loadOverview();
     } catch (err) {
       pipelineTestResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runVoicevoxUITest() {
+    voicevoxResult = "実行中...";
+    voicevoxAudioSrc = "";
+    try {
+      const result = await fetchJSON("/api/tests/voicevox/ui", {
+        method: "POST",
+        body: JSON.stringify({
+          text: voicevoxText,
+          speaker: Number(voicevoxSpeaker) || 1
+        })
+      });
+      voicevoxResult = JSON.stringify(result, null, 2);
+      voicevoxAudioSrc = `data:${result.content_type || "audio/wav"};base64,${result.audio_base64}`;
+    } catch (err) {
+      voicevoxResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runVoicevoxStackchanTest() {
+    stackchanResult = "実行中...";
+    try {
+      const result = await fetchJSON("/api/tests/voicevox/stackchan", {
+        method: "POST",
+        body: JSON.stringify({
+          text: stackchanText,
+          speaker: Number(stackchanSpeaker) || 1,
+          expression: stackchanExpression,
+          motion: stackchanMotion
+        })
+      });
+      stackchanResult = JSON.stringify(result, null, 2);
+      await loadOverview();
+    } catch (err) {
+      stackchanResult = `失敗: ${err.message}`;
     }
   }
 
@@ -216,6 +262,60 @@
         <button class="btn btn-primary" on:click={() => runPipelineTest().catch(() => undefined)}>疎通テスト実行</button>
       </div>
       <pre class="result">{pipelineTestResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>Voicevox UI 単体テスト</h2>
+      <p>Stackchan 非接続でも Voicevox 音声生成を確認できます。</p>
+      <form class="settings-form" on:submit|preventDefault={() => runVoicevoxUITest().catch(() => undefined)}>
+        <label>入力テキスト
+          <textarea rows="3" bind:value={voicevoxText}></textarea>
+        </label>
+        <label>speaker
+          <input type="number" min="1" bind:value={voicevoxSpeaker} />
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">Voicevox テスト実行</button>
+          <button type="button" class="btn" on:click={() => { voicevoxAudioSrc = ""; voicevoxResult = "未実行"; }}>結果クリア</button>
+        </div>
+      </form>
+      {#if voicevoxAudioSrc}
+        <audio class="audio-preview" controls src={voicevoxAudioSrc}></audio>
+      {/if}
+      <pre class="result">{voicevoxResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>Voicevox Stackchan 連携テスト</h2>
+      <p>接続中の Stackchan へ `tts.end` と表情・モーションを送信して再生を確認します。</p>
+      <form class="settings-form" on:submit|preventDefault={() => runVoicevoxStackchanTest().catch(() => undefined)}>
+        <label>入力テキスト
+          <textarea rows="3" bind:value={stackchanText}></textarea>
+        </label>
+        <label>speaker
+          <input type="number" min="1" bind:value={stackchanSpeaker} />
+        </label>
+        <label>expression
+          <select bind:value={stackchanExpression}>
+            <option value="neutral">neutral</option>
+            <option value="happy">happy</option>
+            <option value="sad">sad</option>
+            <option value="surprised">surprised</option>
+          </select>
+        </label>
+        <label>motion
+          <select bind:value={stackchanMotion}>
+            <option value="idle">idle</option>
+            <option value="nod">nod</option>
+            <option value="shake">shake</option>
+          </select>
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">Stackchan 連携テスト実行</button>
+          <button type="button" class="btn" on:click={() => { stackchanResult = "未実行"; }}>結果クリア</button>
+        </div>
+      </form>
+      <pre class="result">{stackchanResult}</pre>
     </section>
   </section>
 

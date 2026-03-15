@@ -8,6 +8,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      voicevox:
+        condition: service_started
     environment:
       APP_ENV: ${APP_ENV:-local}
       SERVER_ADDR: ${SERVER_ADDR:-:8080}
@@ -26,6 +28,13 @@ services:
       PROVIDER_RETRY_BASE_DELAY_MS: ${PROVIDER_RETRY_BASE_DELAY_MS:-100}
     ports:
       - "8080:8080"
+
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    container_name: stackchan-voicevox
+    restart: unless-stopped
+    ports:
+      - "50021:50021"
 
   db:
     image: postgres:16-alpine

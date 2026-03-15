@@ -15,7 +15,7 @@
   "definitions": {
     "TTSEndPayload": {
       "type": "object",
-      "required": ["request_id", "audio_base64", "duration_ms", "sample_rate_hz", "codec"],
+      "required": ["request_id", "duration_ms", "sample_rate_hz", "codec"],
       "additionalProperties": false,
       "properties": {
         "request_id": {
@@ -26,7 +26,7 @@
         "audio_base64": {
           "type": "string",
           "minLength": 1,
-          "description": "Base64 エンコードされた音声データ"
+          "description": "後方互換用の Base64 エンコード音声データ。標準経路では tts.chunk で送信します"
         },
         "duration_ms": {
           "type": "integer",
@@ -42,6 +42,11 @@
           "type": "string",
           "enum": ["opus", "pcm"],
           "description": "音声コーデック"
+        },
+        "total_chunks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "先行して送信した tts.chunk の総数"
         }
       }
     }

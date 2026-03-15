@@ -1,0 +1,45 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "stackchan-firmware",
+      "includePath": [
+        "${workspaceFolder}/firmware",
+        "${workspaceFolder}/firmware/include",
+        "${workspaceFolder}/firmware/app/**",
+        "${workspaceFolder}/firmware/boards/**",
+        "${workspaceFolder}/firmware/protocol/**",
+        "${workspaceFolder}/firmware/runtime/**",
+        "${workspaceFolder}/firmware/.pio/libdeps/stackchan_cores3/**",
+        "/home/rihow/.platformio/packages/framework-arduinoespressif32/**",
+        "/home/rihow/.platformio/packages/toolchain-xtensa-esp32s3/**",
+        "/home/rihow/.platformio/packages/toolchain-riscv32-esp/**"
+      ],
+      "defines": [
+        "PLATFORMIO=60103",
+        "ARDUINO=10819",
+        "ARDUINO_ARCH_ESP32",
+        "ARDUINO_M5STACK_CORES3",
+        "ESP32",
+        "CORE_DEBUG_LEVEL=0",
+        "FW_AUDIO_SAMPLE_RATE=16000",
+        "FW_AUDIO_FRAME_MS=20",
+        "FW_RECONNECT_BASE_MS=500",
+        "FW_RECONNECT_MAX_MS=10000",
+        "FW_HEARTBEAT_INTERVAL_MS=15000"
+      ],
+      "compilerPath": "/home/rihow/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-g++",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/firmware",
+          "${workspaceFolder}/firmware/.pio/libdeps/stackchan_cores3",
+          "/home/rihow/.platformio/packages/framework-arduinoespressif32"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ]
+}

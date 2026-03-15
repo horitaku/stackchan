@@ -208,7 +208,11 @@
 | P8-10 | Opus 経路の計測項目を runtime metrics へ追加 | 高 | TBD | P8-05, P8-04 | first frame / cadence jitter / E2E latency を収集して可視化へ接続 | 計画済み |
 | P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備 | 高 | Copilot | P8-01 | `voicevox` サービス追加、`VOICEVOX_BASE_URL` 接続確認、起動/復旧手順を整備 | 完了 |
 | P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加 | 高 | Copilot | P8-11 | テキスト入力 -> 音声生成 -> UI 内確認の最小テスト導線を追加 | 完了 |
-| P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加 | 高 | TBD | P8-12 | Stackchan 連携時の再生結果と遅延を確認できるテスト導線を追加 | 計画済み |
+| P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加 | 高 | Copilot | P8-12 | Stackchan 連携時の再生結果と遅延を確認できるテスト導線を追加 | 完了 |
+| P8-14 | tts.chunk を音声フレーム単位へ再設計 | 中 | TBD | P8-13 | `stream_id` / `frame_duration_ms` / `samples_per_chunk` / `playout_ts` を含む chunk 契約へ更新 | 計画済み |
+| P8-15 | firmware に事前バッファ付き再生パイプラインを導入 | 中 | TBD | P8-14 | 60〜120ms 事前バッファ、low-water/high-water、リングバッファ消費を導入 | 計画済み |
+| P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入 | 中 | TBD | P8-15 | sequence/timestamp 管理と欠落時の補完方針を追加 | 計画済み |
+| P8-17 | 音声再生処理を専用消費ループへ分離 | 中 | TBD | P8-15 | 通信受信と再生処理を分離し、将来の低遅延化に備える | 計画済み |
 
 ## 11. 意思決定ログ
 

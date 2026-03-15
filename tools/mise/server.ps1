@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('run', 'kill8080', 'restart', 'restart_bg', 'healthz')]
+  [ValidateSet('run', 'kill8080', 'restart', 'restart_bg', 'healthz', 'build_ui')]
   [string]$Action
 )
 
@@ -9,6 +9,21 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $serverDir = Join-Path $repoRoot 'server'
+$webuiDir = Join-Path $serverDir 'webui'
+
+function Build-WebUI {
+  Write-Output '[server] Building WebUI (Svelte/Vite)'
+  Push-Location $webuiDir
+  try {
+    if (-not (Test-Path (Join-Path $webuiDir 'node_modules'))) {
+      npm install
+    }
+    npm run build
+  }
+  finally {
+    Pop-Location
+  }
+}
 
 function Stop-Port8080 {
   $procIds = @()
@@ -37,24 +52,52 @@ function Stop-Port8080 {
   }
 }
 
-switch ($Action) {
-  'healthz' {
+function Invoke-Healthz {
+  param(
+    [string]$Uri = 'http://127.0.0.1:8080/healthz',
+    [int]$MaxAttempts = 5,
+    [int]$DelayMs = 500
+  )
+
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
     try {
-      $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/healthz' -UseBasicParsing -TimeoutSec 5
-      Write-Host ("STATUS={0}" -f $r.StatusCode)
-      if ($null -ne $r.Content -and $r.Content.ToString().Length -gt 0) {
-        Write-Host $r.Content
+      $result = Invoke-RestMethod -Uri $Uri -Method Get -TimeoutSec 5
+      Write-Output 'STATUS=200'
+      if ($null -ne $result) {
+        try {
+          $json = $result | ConvertTo-Json -Compress -Depth 4
+          Write-Output $json
+        }
+        catch {
+          Write-Output ($result.ToString())
+        }
       }
+      return
     }
     catch {
-      Write-Output ("[server] healthz failed: {0}" -f $_.Exception.Message)
+      if ($attempt -lt $MaxAttempts) {
+        Start-Sleep -Milliseconds $DelayMs
+        continue
+      }
+
+      Write-Output ('[server] healthz failed after {0} attempts: {1}' -f $MaxAttempts, $_.Exception.Message)
       exit 1
     }
+  }
+}
+
+switch ($Action) {
+  'healthz' {
+    Invoke-Healthz
   }
   'kill8080' {
     Stop-Port8080
   }
+  'build_ui' {
+    Build-WebUI
+  }
   'run' {
+    Build-WebUI
     Push-Location $serverDir
     try {
       go run ./cmd/stackchan-server
@@ -65,6 +108,7 @@ switch ($Action) {
   }
   'restart' {
     Stop-Port8080
+    Build-WebUI
     Push-Location $serverDir
     try {
       go run ./cmd/stackchan-server
@@ -75,6 +119,7 @@ switch ($Action) {
   }
   'restart_bg' {
     Stop-Port8080
+    Build-WebUI
 
     $logDir = Join-Path $repoRoot '.logs'
     if (-not (Test-Path $logDir)) {

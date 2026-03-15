@@ -46,6 +46,7 @@ func main() {
 	}
 	orchestrator := conversation.NewOrchestrator(&mock.STT{}, &mock.LLM{}, &mock.TTS{}, policy)
 	wsHandler := web.NewWSHandler(manager, readTimeout, writeTimeout, orchestrator)
+	apiHandler := web.NewAPIHandler(wsHandler.RuntimeState(), web.NewSettingsStore(), orchestrator)
 
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -58,6 +59,15 @@ func main() {
 
 	// WebSocket エンドポイント
 	r.GET("/ws", wsHandler.Handle)
+
+	api := r.Group("/api")
+	apiHandler.RegisterRoutes(api)
+
+	// フェーズ 7: Svelte ビルド成果物を静的配信します
+	r.Static("/ui", "./webui/dist")
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/ui/")
+	})
 
 	log.Info().Str("addr", serverAddr).Msg("starting stackchan server")
 	if err := r.Run(serverAddr); err != nil {

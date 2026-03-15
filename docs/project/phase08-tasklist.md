@@ -21,7 +21,11 @@
 | P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Planned |
 | P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Done |
 | P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Done |
-| P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Planned |
+| P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Done |
+| P8-14 | tts.chunk を音声フレーム単位へ再設計する | `stream_id` / `chunk_index` / `sent_at or playout_ts` / `frame_duration_ms` / `samples_per_chunk` を含む payload 定義、schema、互換性メモ | 中 | 現在の固定 byte 分割では低遅延再生と欠落検知に不向きなため | Planned |
+| P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Planned |
+| P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Planned |
+| P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Planned |
 
 ## 2.1 実行メモ（2026-03-15）
 
@@ -108,6 +112,39 @@
   - `go test ./...` 成功
   - `npm run build` 成功
   - `POST /api/tests/voicevox/ui` が `audio_base64` を返却することを確認
+
+## 2.8 P8-13 WebUI Stackchan 連携テスト導線メモ（2026-03-15）
+
+- server に `POST /api/tests/voicevox/stackchan` を追加しました。
+  - Voicevox で生成した音声を接続中の Stackchan セッションへ `tts.end` として送信します。
+  - 視認性向上のため `avatar.expression` と `motion.play` も同時送信します。
+- WebUI に Stackchan 連携テストパネルを追加しました。
+  - 入力テキスト
+  - speaker / expression / motion
+  - 連携テスト実行
+  - JSON 結果表示
+- 実行時の確認結果:
+  - `go test ./...` 成功
+  - `npm run build` 成功
+  - Stackchan 未接続時は `{"error":"no active Stackchan session is connected"}` を返却
+  - 接続断時は write エラーを返却し、server 側でアクティブセッションを自動クリア
+
+## 2.9 音声 chunking 次段階の引き継ぎ事項（2026-03-15）
+
+- 現在の `tts.chunk` は「巨大な `tts.end` を避けるための安全配送」が主目的であり、低遅延ストリーミング再生はまだ未着手です。
+- 現状の制約:
+  - chunk は音声フレーム単位ではなく固定 byte 分割です。
+  - firmware は `tts.chunk` を全受信してから `tts.end` で再生開始します。
+  - jitter 吸収、欠落補完、playout timestamp 管理は未実装です。
+- 次段階で優先する項目:
+  - `tts.chunk` に `stream_id`、`frame_duration_ms`、`samples_per_chunk`、`sent_at` または `playout_ts` を追加する
+  - 20ms 単位を基本とした音声フレーム設計へ寄せる
+  - firmware に 60〜120ms の事前バッファを導入する
+  - low-water / high-water を持つリングバッファ再生へ移行する
+  - 欠落時は停止待ちではなく concealment（減衰コピーまたは無音補完）を先に導入する
+- 補足:
+  - 現 transport は WebSocket/TCP なので、初期優先度は FEC よりも sequence/timestamp と事前バッファです。
+  - browser/WebUI 側の AudioWorklet 相当の議論は、firmware では「通信受信と再生消費の分離タスク化」に読み替えて扱います。
 
 ## 3. フェーズ 7 からの前提条件
 

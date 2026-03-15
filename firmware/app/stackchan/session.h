@@ -90,6 +90,13 @@ class StackchanSession {
   m5avatar::Avatar _avatar;
   bool _avatarReady{false};
 
+  // 受信 TTS チャンクバッファ
+  uint8_t* _incomingTTSBuffer{nullptr};
+  size_t _incomingTTSBufferLen{0};
+  int _incomingTTSExpectedChunks{0};
+  int _incomingTTSReceivedChunks{0};
+  String _incomingTTSRequestId{""};
+
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
 
@@ -108,10 +115,13 @@ class StackchanSession {
   // 受信イベントハンドラ（P6 で avatar / motion を追加）
   void handleWelcome(const String& payloadJson, const String& envelopeSessionId);
   void handleSTTFinal(const String& payloadJson);
+  void handleTTSChunk(const String& payloadJson);
   void handleTTSEnd(const String& payloadJson);
   void handleAvatarExpression(const String& payloadJson);
   void handleMotionPlay(const String& payloadJson);
   void handleError(const String& payloadJson);
+  void clearIncomingTTSBuffer();
+  bool appendIncomingTTSChunk(const String& requestId, int chunkIndex, int totalChunks, const String& audioBase64);
 };
 
 }  // namespace App

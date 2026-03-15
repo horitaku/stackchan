@@ -280,6 +280,8 @@ void StackchanSession::onTextMessage(const String& msg) {
     handleWelcome(payloadStr, String(envSessionId));
   } else if (strcmp(type, Protocol::EventType::STT_FINAL) == 0) {
     handleSTTFinal(payloadStr);
+  } else if (strcmp(type, Protocol::EventType::TTS_CHUNK) == 0) {
+    handleTTSChunk(payloadStr);
   } else if (strcmp(type, Protocol::EventType::TTS_END) == 0) {
     handleTTSEnd(payloadStr);
   } else if (strcmp(type, Protocol::EventType::AVATAR_EXPRESSION) == 0) {
@@ -345,6 +347,28 @@ void StackchanSession::handleSTTFinal(const String& payloadJson) {
   }
 }
 
+void StackchanSession::handleTTSChunk(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* requestId = payload["request_id"] | "";
+  int chunkIndex = payload["chunk_index"] | -1;
+  int totalChunks = payload["total_chunks"] | 0;
+  const char* audioBase64 = payload["audio_base64"] | "";
+
+  if (!appendIncomingTTSChunk(String(requestId), chunkIndex, totalChunks, String(audioBase64))) {
+    Serial.printf("[TTS] request_id=%s chunk append failed idx=%d total=%d\n",
+      requestId, chunkIndex, totalChunks);
+    return;
+  }
+
+  Serial.printf("[TTS] request_id=%s chunk received %d/%d total_bytes=%u\n",
+    requestId,
+    chunkIndex + 1,
+    totalChunks,
+    static_cast<unsigned>(_incomingTTSBufferLen));
+}
+
 void StackchanSession::handleTTSEnd(const String& payloadJson) {
   JsonDocument payload;
   deserializeJson(payload, payloadJson);
@@ -354,6 +378,7 @@ void StackchanSession::handleTTSEnd(const String& payloadJson) {
   int durationMs         = payload["duration_ms"] | 0;
   int sampleRateHz       = payload["sample_rate_hz"] | 0;
   const char* audioBase64 = payload["audio_base64"] | "";
+  int totalChunks        = payload["total_chunks"] | 0;
 
   _currentRequestId = String(requestId);
 
@@ -364,28 +389,52 @@ void StackchanSession::handleTTSEnd(const String& payloadJson) {
     return;
   }
 
-  uint8_t* decoded = nullptr;
-  size_t decodedLen = 0;
-  if (!decodeBase64(String(audioBase64), &decoded, &decodedLen)) {
-    Serial.printf("[TTS] request_id=%s base64 decode failed\n", requestId);
-    return;
+  uint8_t* playbackBytes = nullptr;
+  size_t playbackLen = 0;
+
+  if (_incomingTTSRequestId == String(requestId) && _incomingTTSBuffer != nullptr) {
+    if (totalChunks > 0 && _incomingTTSReceivedChunks != totalChunks) {
+      Serial.printf("[TTS] request_id=%s chunk count mismatch received=%d expected=%d\n",
+        requestId,
+        _incomingTTSReceivedChunks,
+        totalChunks);
+      clearIncomingTTSBuffer();
+      return;
+    }
+    playbackBytes = _incomingTTSBuffer;
+    playbackLen = _incomingTTSBufferLen;
+  } else {
+    uint8_t* decoded = nullptr;
+    size_t decodedLen = 0;
+    if (!decodeBase64(String(audioBase64), &decoded, &decodedLen)) {
+      Serial.printf("[TTS] request_id=%s base64 decode failed\n", requestId);
+      return;
+    }
+    playbackBytes = decoded;
+    playbackLen = decodedLen;
   }
 
-  const bool started = _ttsPlayer.playPCM16(decoded, decodedLen, static_cast<uint32_t>(sampleRateHz), true);
-  free(decoded);
+  const bool started = _ttsPlayer.playPCM16(playbackBytes, playbackLen, static_cast<uint32_t>(sampleRateHz), true);
+
+  if (playbackBytes == _incomingTTSBuffer) {
+    clearIncomingTTSBuffer();
+  } else if (playbackBytes != nullptr) {
+    free(playbackBytes);
+  }
 
   if (!started) {
     Serial.printf("[TTS] request_id=%s playback start failed\n", requestId);
     return;
   }
 
-  Serial.printf("[TTS] request_id=%s playback started codec=%s duration_ms=%d sample_rate_hz=%d decoded_bytes=%u start_latency_ms=%u\n",
+  Serial.printf("[TTS] request_id=%s playback started codec=%s duration_ms=%d sample_rate_hz=%d decoded_bytes=%u start_latency_ms=%u chunks=%d\n",
     requestId,
     codec,
     durationMs,
     sampleRateHz,
-    static_cast<unsigned>(decodedLen),
-    static_cast<unsigned>(_ttsPlayer.startLatencyMs()));
+    static_cast<unsigned>(playbackLen),
+    static_cast<unsigned>(_ttsPlayer.startLatencyMs()),
+    totalChunks);
 }
 
 void StackchanSession::handleAvatarExpression(const String& payloadJson) {
@@ -517,6 +566,58 @@ bool StackchanSession::decodeBase64(const String& src, uint8_t** out, size_t* ou
 
   *out = buffer;
   *outLen = written;
+  return true;
+}
+
+void StackchanSession::clearIncomingTTSBuffer() {
+  if (_incomingTTSBuffer != nullptr) {
+    free(_incomingTTSBuffer);
+    _incomingTTSBuffer = nullptr;
+  }
+  _incomingTTSBufferLen = 0;
+  _incomingTTSExpectedChunks = 0;
+  _incomingTTSReceivedChunks = 0;
+  _incomingTTSRequestId = "";
+}
+
+bool StackchanSession::appendIncomingTTSChunk(const String& requestId, int chunkIndex, int totalChunks, const String& audioBase64) {
+  if (requestId.length() == 0 || chunkIndex < 0 || totalChunks <= 0 || audioBase64.length() == 0) {
+    return false;
+  }
+
+  if (_incomingTTSRequestId != requestId) {
+    clearIncomingTTSBuffer();
+    _incomingTTSRequestId = requestId;
+    _incomingTTSExpectedChunks = totalChunks;
+  }
+
+  if (chunkIndex != _incomingTTSReceivedChunks) {
+    Serial.printf("[TTS] request_id=%s unexpected chunk index=%d expected=%d\n",
+      requestId.c_str(), chunkIndex, _incomingTTSReceivedChunks);
+    clearIncomingTTSBuffer();
+    return false;
+  }
+
+  uint8_t* decoded = nullptr;
+  size_t decodedLen = 0;
+  if (!decodeBase64(audioBase64, &decoded, &decodedLen)) {
+    return false;
+  }
+
+  uint8_t* next = static_cast<uint8_t*>(realloc(_incomingTTSBuffer, _incomingTTSBufferLen + decodedLen));
+  if (next == nullptr) {
+    free(decoded);
+    clearIncomingTTSBuffer();
+    return false;
+  }
+
+  _incomingTTSBuffer = next;
+  memcpy(_incomingTTSBuffer + _incomingTTSBufferLen, decoded, decodedLen);
+  _incomingTTSBufferLen += decodedLen;
+  _incomingTTSReceivedChunks++;
+  _incomingTTSExpectedChunks = totalChunks;
+
+  free(decoded);
   return true;
 }
 

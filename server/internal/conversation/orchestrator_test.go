@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stackchan/server/internal/conversation"
-	"github.com/stackchan/server/internal/providers"
-	"github.com/stackchan/server/internal/providers/mock"
+	"github.com/horitaku/stackchan/server/internal/conversation"
+	"github.com/horitaku/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/providers/mock"
 )
 
 func TestOrchestrator_ProcessAudioStream_Success(t *testing.T) {

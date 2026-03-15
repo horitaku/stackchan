@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/stackchan/server/internal/logging"
-	"github.com/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/logging"
+	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
 // Orchestrator は provider 群を束ねて最小会話フローを実行します。

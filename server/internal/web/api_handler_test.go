@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stackchan/server/internal/conversation"
-	"github.com/stackchan/server/internal/providers"
-	"github.com/stackchan/server/internal/providers/mock"
-	"github.com/stackchan/server/internal/web"
+	"github.com/horitaku/stackchan/server/internal/conversation"
+	"github.com/horitaku/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/providers/mock"
+	"github.com/horitaku/stackchan/server/internal/web"
 )
 
 func newAPITestServer(t *testing.T) *httptest.Server {

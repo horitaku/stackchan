@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
 // MaxAudioChunksPerStream はストリームあたりの最大バッファチャンク数です。

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
 func TestCallWithRetry_SuccessOnSecondAttempt(t *testing.T) {

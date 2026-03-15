@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/stackchan/server/internal/conversation"
-	"github.com/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/conversation"
+	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
 // APIHandler はフェーズ7の可観測性・設定更新・疎通テスト API を提供します。

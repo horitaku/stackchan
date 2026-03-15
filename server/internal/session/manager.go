@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/stackchan/server/internal/protocol"
-	"github.com/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/protocol"
+	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
 // State はセッションの状態を表します。

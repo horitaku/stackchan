@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/stackchan/server/internal/logging"
-	"github.com/stackchan/server/internal/protocol"
+	"github.com/horitaku/stackchan/server/internal/logging"
+	"github.com/horitaku/stackchan/server/internal/protocol"
 )
 
 // HelloPayload は session.hello の payload 定義です（events.md § 3.1 参照）。

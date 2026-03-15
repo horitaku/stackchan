@@ -3,7 +3,7 @@ package protocol_test
 import (
 	"testing"
 
-	"github.com/stackchan/server/internal/protocol"
+	"github.com/horitaku/stackchan/server/internal/protocol"
 )
 
 // TestSequenceTracker_NormalFlow は正常な単調増加シーケンスが SequenceOK を返すことを確認します。

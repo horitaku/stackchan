@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stackchan/server/internal/protocol"
-	"github.com/stackchan/server/internal/session"
+	"github.com/horitaku/stackchan/server/internal/protocol"
+	"github.com/horitaku/stackchan/server/internal/session"
 )
 
 // newTestSession はテスト用セッションを生成するヘルパーです。

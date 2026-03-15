@@ -38,19 +38,22 @@
 ## クイックスタート
 
 1. リポジトリ構成を確認する
-   - `Get-ChildItem -Name`
+  - `ls`
 2. server 用設定を作る
-   - `Copy-Item .env.example .env`
+  - `cp .env.example .env`
 3. firmware 用設定を作る
-   - `Copy-Item firmware/platformio.ini.local.example firmware/platformio.ini.local`
-   - `Copy-Item firmware/include/secrets.example.h firmware/include/secrets.h`
+  - `cp firmware/platformio.ini.local.example firmware/platformio.ini.local`
+  - `cp firmware/include/secrets.example.h firmware/include/secrets.h`
 4. 機密情報の扱いを確認する
-   - `Get-Content docs/project/secrets-operations.md`
+  - `cat docs/project/secrets-operations.md`
+5. 必要ツールを導入する（mise を使う場合）
+  - `mise install`
 
 ## mise タスク（任意）
 
 長い PlatformIO コマンドを覚えなくても実行できるように、`mise` タスクを用意しています。
 `mise` コマンドはリポジトリルート（`stackchan/`）で実行してください。
+内部実装は Node.js の CommonJS スクリプト（`tools/mise/*.cjs`）なので、Linux と Windows の両方で同じタスク名を使えます。
 
 - タスク一覧
   - `mise tasks`
@@ -69,8 +72,8 @@
 
 ## 進捗の見かた
 
-- 実装計画: `Get-Content docs/project/implementation-plan.md`
-- フェーズ 0 タスク: `Get-Content docs/project/phase00-tasklist.md`
+- 実装計画: `cat docs/project/implementation-plan.md`
+- フェーズ 0 タスク: `cat docs/project/phase00-tasklist.md`
 
 ## ロードマップの雰囲気
 

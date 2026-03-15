@@ -1,47 +1,54 @@
+[tools]
+node = "24"
+go = "1.26"
+python = "3.12"
+pipx = "latest"
+"pipx:platformio" = "latest"
+
 [tasks."fw:build"]
 description = "Build firmware (stackchan_cores3)"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action build"
+run = "node ./tools/mise/fw.cjs build"
 
 [tasks."fw:port"]
 description = "Detect firmware serial port (prefer ESP32-S3 VID:PID=303A:1001)"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action port"
+run = "node ./tools/mise/fw.cjs port"
 
 [tasks."fw:upload"]
-description = "Upload firmware to detected COM port"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action upload"
+description = "Upload firmware to detected serial port"
+run = "node ./tools/mise/fw.cjs upload"
 
 [tasks."fw:monitor"]
-description = "Open serial monitor on detected COM port"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action monitor"
+description = "Open serial monitor on detected serial port"
+run = "node ./tools/mise/fw.cjs monitor"
 
 [tasks."fw:upmon"]
-description = "Upload and monitor on detected COM port"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action upmon"
+description = "Upload and monitor on detected serial port"
+run = "node ./tools/mise/fw.cjs upmon"
 
 [tasks."fw:clean"]
 description = "Clean firmware build artifacts"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -Action clean"
+run = "node ./tools/mise/fw.cjs clean"
 
 [tasks."server:healthz"]
 description = "Check server healthz endpoint"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action healthz"
+run = "node ./tools/mise/server.cjs healthz"
 
 [tasks."webui:build"]
 description = "Build WebUI (Svelte/Vite)"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action build_ui"
+run = "node ./tools/mise/server.cjs build_ui"
 
 [tasks."server:run"]
 description = "Build WebUI and run development server (Go + Gin)"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action run"
+run = "node ./tools/mise/server.cjs run"
 
 [tasks."server:kill8080"]
 description = "Stop processes using TCP port 8080"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action kill8080"
+run = "node ./tools/mise/server.cjs kill8080"
 
 [tasks."server:restart"]
 description = "Stop TCP/8080 process, build WebUI, and run development server"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action restart"
+run = "node ./tools/mise/server.cjs restart"
 
 [tasks."server:restart:bg"]
 description = "Stop TCP/8080 process, build WebUI, and run development server in background"
-run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action restart_bg"
+run = "node ./tools/mise/server.cjs restart_bg"

@@ -6,7 +6,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
 // TTS はテスト向け固定出力 TTS provider です。

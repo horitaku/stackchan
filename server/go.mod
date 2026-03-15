@@ -1,4 +1,4 @@
-module github.com/stackchan/server
+module github.com/horitaku/stackchan/server
 
 go 1.22.0
 

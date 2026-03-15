@@ -1,4 +1,10 @@
 # providers
 
-STT/LLM/TTS のアダプタ実装を管理します。
-インターフェースファーストで設計し、モック可能な構成を維持します。
+このディレクトリは provider の共有仕様を管理します。
+
+- provider 契約（interface 仕様、リクエスト/レスポンス要件）
+- adapter の互換性メモ
+- 将来の共通 fixture と検証データ
+
+実行コードは当面 `server/internal/providers` に集約し、
+ランタイム責務の分離と依存関係の明確化を優先します。

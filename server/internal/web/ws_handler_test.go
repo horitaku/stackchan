@@ -11,13 +11,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/stackchan/server/internal/conversation"
-	"github.com/stackchan/server/internal/logging"
-	"github.com/stackchan/server/internal/protocol"
-	"github.com/stackchan/server/internal/providers"
-	"github.com/stackchan/server/internal/providers/mock"
-	"github.com/stackchan/server/internal/session"
-	"github.com/stackchan/server/internal/web"
+	"github.com/horitaku/stackchan/server/internal/conversation"
+	"github.com/horitaku/stackchan/server/internal/logging"
+	"github.com/horitaku/stackchan/server/internal/protocol"
+	"github.com/horitaku/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/providers/mock"
+	"github.com/horitaku/stackchan/server/internal/session"
+	"github.com/horitaku/stackchan/server/internal/web"
 )
 
 func init() {

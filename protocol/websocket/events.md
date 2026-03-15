@@ -130,6 +130,7 @@
   - frame_duration_ms: integer (required, enum: 10, 20, 40, 60)
   - channel_count: integer (required, enum: 1, 2)
 - Note: この後続のバイナリ WebSocket フレームはフォーマット § 6.1 を参照
+- Normative note: 正式運用ルートは `codec=opus` とする。`codec=pcm` は開発互換の fallback としてのみ許容する。
 
 ### 5.2 stt.final
 
@@ -153,7 +154,7 @@
   - duration_ms: integer (required, minimum: 1)
   - sample_rate_hz: integer (required, enum: 8000, 16000, 22050, 24000, 44100, 48000)
   - codec: string (required, enum: opus, pcm)
-- フェーズ 6 の最小再生パスでは `codec=pcm` を優先する
+- フェーズ 8 以降の標準経路では `codec=opus` を優先し、`codec=pcm` は開発互換で維持する
 - 将来候補: `tts.chunk`（音声ストリーミング配信）
 
 ### 5.4 heartbeat
@@ -208,3 +209,11 @@ audio.stream_open 後に送信するバイナリ WebSocket フレームの構造
 - v0 では additive change のみ許可する。
 - 新規フィールドは optional として追加し、既存フィールドの意味変更は行わない。
 - breaking change は `version` を上げ、移行手順を versioning.md に記載する。
+
+## 8. Next Planned Events
+
+次フェーズで割り込み制御を正式化するため、以下のイベントを追加候補とする。
+
+- conversation.cancel
+- tts.stop
+- audio.stream_abort

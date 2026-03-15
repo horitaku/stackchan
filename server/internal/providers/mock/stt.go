@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/stackchan/server/internal/providers"
+	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
 // STT はテスト向け固定応答 STT provider です。

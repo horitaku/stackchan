@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stackchan/server/internal/protocol"
+	"github.com/horitaku/stackchan/server/internal/protocol"
 )
 
 const (

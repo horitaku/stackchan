@@ -2,6 +2,7 @@ package web_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +85,30 @@ func readEnvelope(t *testing.T, conn *websocket.Conn) protocol.Envelope {
 		t.Fatalf("failed to unmarshal envelope: %v", err)
 	}
 	return env
+}
+
+func readTTSStreamUntilEnd(t *testing.T, conn *websocket.Conn) ([]protocol.TTSChunkPayload, protocol.Envelope, protocol.TTSEndPayload) {
+	t.Helper()
+	chunks := make([]protocol.TTSChunkPayload, 0)
+	for {
+		env := readEnvelope(t, conn)
+		switch env.Type {
+		case "tts.chunk":
+			var chunk protocol.TTSChunkPayload
+			if err := json.Unmarshal(env.Payload, &chunk); err != nil {
+				t.Fatalf("failed to unmarshal tts.chunk payload: %v", err)
+			}
+			chunks = append(chunks, chunk)
+		case "tts.end":
+			var end protocol.TTSEndPayload
+			if err := json.Unmarshal(env.Payload, &end); err != nil {
+				t.Fatalf("failed to unmarshal tts.end payload: %v", err)
+			}
+			return chunks, env, end
+		default:
+			t.Fatalf("expected tts.chunk or tts.end, got %s", env.Type)
+		}
+	}
 }
 
 // --- 正常系テスト ---
@@ -398,27 +423,40 @@ func TestAudioFullLifecycle(t *testing.T) {
 		t.Error("expected non-empty transcript")
 	}
 
-	// tts.end を受信して内容を検証します
-	env2 := readEnvelope(t, conn)
-	if env2.Type != "tts.end" {
-		t.Errorf("expected tts.end, got %s", env2.Type)
-	}
-	var ttsPayload protocol.TTSEndPayload
-	if err := json.Unmarshal(env2.Payload, &ttsPayload); err != nil {
-		t.Fatalf("failed to unmarshal tts.end payload: %v", err)
-	}
+	// tts.chunk 群と tts.end を受信して内容を検証します
+	ttsChunks, env2, ttsPayload := readTTSStreamUntilEnd(t, conn)
 	if ttsPayload.RequestID != streamID {
 		t.Errorf("expected request_id=%s, got %s", streamID, ttsPayload.RequestID)
 	}
 	if ttsPayload.DurationMs <= 0 {
 		t.Errorf("expected duration_ms > 0, got %d", ttsPayload.DurationMs)
 	}
-	if ttsPayload.AudioBase64 == "" {
-		t.Error("expected non-empty audio_base64")
+	if len(ttsChunks) == 0 {
+		t.Fatal("expected at least one tts.chunk")
+	}
+	if ttsPayload.TotalChunks != len(ttsChunks) {
+		t.Errorf("expected total_chunks=%d, got %d", len(ttsChunks), ttsPayload.TotalChunks)
+	}
+	decodedBytes := 0
+	for index, chunk := range ttsChunks {
+		if chunk.RequestID != streamID {
+			t.Errorf("expected chunk request_id=%s, got %s", streamID, chunk.RequestID)
+		}
+		if chunk.ChunkIndex != index {
+			t.Errorf("expected chunk_index=%d, got %d", index, chunk.ChunkIndex)
+		}
+		bytes, err := base64.StdEncoding.DecodeString(chunk.AudioBase64)
+		if err != nil {
+			t.Fatalf("failed to decode chunk %d: %v", index, err)
+		}
+		decodedBytes += len(bytes)
+	}
+	if decodedBytes <= 0 {
+		t.Error("expected decoded chunk bytes > 0")
 	}
 	// stt.final → tts.end の sequence が連番であることを確認します
-	if env2.Sequence != env1.Sequence+1 {
-		t.Errorf("expected tts.end sequence=%d, got %d", env1.Sequence+1, env2.Sequence)
+	if env2.Sequence <= env1.Sequence {
+		t.Errorf("expected tts.end sequence > %d, got %d", env1.Sequence, env2.Sequence)
 	}
 }
 
@@ -536,17 +574,13 @@ func TestBinaryStreamOpenAndFrames(t *testing.T) {
 		t.Error("expected non-empty transcript")
 	}
 
-	// tts.end を受信します
-	env2 := readEnvelope(t, conn)
-	if env2.Type != "tts.end" {
-		t.Errorf("expected tts.end, got %s", env2.Type)
-	}
-	var ttsPayload protocol.TTSEndPayload
-	if err := json.Unmarshal(env2.Payload, &ttsPayload); err != nil {
-		t.Fatalf("failed to unmarshal tts.end: %v", err)
-	}
+	// tts.chunk 群と tts.end を受信します
+	ttsChunks, _, ttsPayload := readTTSStreamUntilEnd(t, conn)
 	if ttsPayload.RequestID != streamID {
 		t.Errorf("expected request_id=%s, got %s", streamID, ttsPayload.RequestID)
+	}
+	if len(ttsChunks) == 0 {
+		t.Fatal("expected at least one tts.chunk")
 	}
 }
 

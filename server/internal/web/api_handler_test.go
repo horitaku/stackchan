@@ -169,3 +169,18 @@ func TestRunVoicevoxUITest(t *testing.T) {
 		t.Fatal("expected audio_base64 in result")
 	}
 }
+
+func TestRunVoicevoxStackchanTest_WSHandlerUnavailable(t *testing.T) {
+	ts := newAPITestServer(t)
+	body, _ := json.Marshal(map[string]any{"text": "てすと", "speaker": 1})
+
+	resp, err := http.Post(ts.URL+"/api/tests/voicevox/stackchan", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to run voicevox stackchan test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
+	}
+}

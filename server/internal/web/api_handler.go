@@ -2,8 +2,10 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -23,6 +25,7 @@ type APIHandler struct {
 	runtimeState  *RuntimeState
 	settingsStore *SettingsStore
 	orchestrator  *conversation.Orchestrator
+	wsHandler     *WSHandler
 	voicevoxBase  string
 	httpClient    *http.Client
 }
@@ -41,6 +44,23 @@ type VoicevoxUITestRequest struct {
 	PitchScale      *float64 `json:"pitch_scale,omitempty"`
 	IntonationScale *float64 `json:"intonation_scale,omitempty"`
 	VolumeScale     *float64 `json:"volume_scale,omitempty"`
+}
+
+// VoicevoxStackchanTestRequest は WebUI から Stackchan 連携テストを実行する入力です。
+type VoicevoxStackchanTestRequest struct {
+	Text     string `json:"text"`
+	Speaker  int    `json:"speaker"`
+	Motion   string `json:"motion,omitempty"`
+	Expression string `json:"expression,omitempty"`
+}
+
+type voicevoxSynthesisResult struct {
+	Text        string
+	Speaker     int
+	ContentType string
+	AudioBase64 string
+	Bytes       int
+	LatencyMs   int64
 }
 
 // NewAPIHandler は APIHandler を初期化します。
@@ -73,6 +93,11 @@ func NewAPIHandlerWithVoicevox(runtimeState *RuntimeState, settingsStore *Settin
 	}
 }
 
+// AttachWSHandler は Stackchan 連携テスト向けに WSHandler 参照を追加します。
+func (h *APIHandler) AttachWSHandler(handler *WSHandler) {
+	h.wsHandler = handler
+}
+
 // RegisterRoutes は API ルートを登録します。
 func (h *APIHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/runtime/overview", h.GetRuntimeOverview)
@@ -80,6 +105,7 @@ func (h *APIHandler) RegisterRoutes(r gin.IRouter) {
 	r.PUT("/settings", h.UpdateSettings)
 	r.POST("/tests/pipeline", h.RunPipelineTest)
 	r.POST("/tests/voicevox/ui", h.RunVoicevoxUITest)
+	r.POST("/tests/voicevox/stackchan", h.RunVoicevoxStackchanTest)
 }
 
 // GetRuntimeOverview は可観測性スナップショットを返します。
@@ -172,6 +198,80 @@ func (h *APIHandler) RunVoicevoxUITest(c *gin.Context) {
 		return
 	}
 
+	result, err := h.synthesizeVoicevox(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"text":         result.Text,
+		"speaker":      result.Speaker,
+		"content_type": result.ContentType,
+		"audio_base64": result.AudioBase64,
+		"bytes":        result.Bytes,
+		"latency_ms":   result.LatencyMs,
+	})
+}
+
+// RunVoicevoxStackchanTest は Voicevox で生成した音声を接続中 Stackchan へ送信します。
+func (h *APIHandler) RunVoicevoxStackchanTest(c *gin.Context) {
+	if h.wsHandler == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ws handler is not configured"})
+		return
+	}
+
+	var req VoicevoxStackchanTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	uiReq := VoicevoxUITestRequest{Text: req.Text, Speaker: req.Speaker}
+	result, err := h.synthesizeVoicevox(c.Request.Context(), uiReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	requestID := "stackchan-test-" + uuid.NewString()
+	expression := strings.TrimSpace(req.Expression)
+	if expression == "" {
+		expression = "happy"
+	}
+	motion := strings.TrimSpace(req.Motion)
+	if motion == "" {
+		motion = "nod"
+	}
+
+	sessionID, err := h.wsHandler.SendTTSTestToActive(
+		requestID,
+		result.AudioBase64,
+		0,
+		24000,
+		"pcm",
+		expression,
+		motion,
+	)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"request_id":    requestID,
+		"session_id":    sessionID,
+		"speaker":       result.Speaker,
+		"text":          result.Text,
+		"voicevox_bytes": result.Bytes,
+		"voicevox_latency_ms": result.LatencyMs,
+		"sent_event":    "tts.end",
+		"expression":    expression,
+		"motion":        motion,
+	})
+}
+
+func (h *APIHandler) synthesizeVoicevox(ctx context.Context, req VoicevoxUITestRequest) (voicevoxSynthesisResult, error) {
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
 		text = "こんにちは、Stackchan の Voicevox テストです。"
@@ -182,30 +282,26 @@ func (h *APIHandler) RunVoicevoxUITest(c *gin.Context) {
 	}
 
 	queryURL := h.voicevoxBase + "/audio_query?text=" + url.QueryEscape(text) + "&speaker=" + url.QueryEscape(strconv.Itoa(speaker))
-	queryReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, queryURL, nil)
+	queryReq, err := http.NewRequestWithContext(ctx, http.MethodPost, queryURL, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build voicevox query request"})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("failed to build voicevox query request")
 	}
 
 	start := time.Now()
 	queryResp, err := h.httpClient.Do(queryReq)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox audio_query request failed"})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox audio_query request failed")
 	}
 	defer queryResp.Body.Close()
 
 	if queryResp.StatusCode < 200 || queryResp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(queryResp.Body, 2048))
-		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox audio_query failed", "detail": string(body)})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox audio_query failed: %s", strings.TrimSpace(string(body)))
 	}
 
 	var audioQuery map[string]any
 	if err := json.NewDecoder(queryResp.Body).Decode(&audioQuery); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to decode voicevox audio_query response"})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("failed to decode voicevox audio_query response")
 	}
 
 	if req.SpeedScale != nil {
@@ -223,35 +319,30 @@ func (h *APIHandler) RunVoicevoxUITest(c *gin.Context) {
 
 	queryBody, err := json.Marshal(audioQuery)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode synthesis payload"})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("failed to encode synthesis payload")
 	}
 
 	synthURL := h.voicevoxBase + "/synthesis?speaker=" + url.QueryEscape(strconv.Itoa(speaker))
-	synthReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, synthURL, bytes.NewReader(queryBody))
+	synthReq, err := http.NewRequestWithContext(ctx, http.MethodPost, synthURL, bytes.NewReader(queryBody))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build voicevox synthesis request"})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("failed to build voicevox synthesis request")
 	}
 	synthReq.Header.Set("Content-Type", "application/json")
 
 	synthResp, err := h.httpClient.Do(synthReq)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox synthesis request failed"})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox synthesis request failed")
 	}
 	defer synthResp.Body.Close()
 
 	if synthResp.StatusCode < 200 || synthResp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(synthResp.Body, 2048))
-		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox synthesis failed", "detail": string(body)})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox synthesis failed: %s", strings.TrimSpace(string(body)))
 	}
 
 	audioBytes, err := io.ReadAll(synthResp.Body)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read voicevox synthesis response"})
-		return
+		return voicevoxSynthesisResult{}, fmt.Errorf("failed to read voicevox synthesis response")
 	}
 
 	elapsed := time.Since(start).Milliseconds()
@@ -260,12 +351,12 @@ func (h *APIHandler) RunVoicevoxUITest(c *gin.Context) {
 		contentType = "audio/wav"
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"text":         text,
-		"speaker":      speaker,
-		"content_type": contentType,
-		"audio_base64": base64.StdEncoding.EncodeToString(audioBytes),
-		"bytes":        len(audioBytes),
-		"latency_ms":   elapsed,
-	})
+	return voicevoxSynthesisResult{
+		Text:        text,
+		Speaker:     speaker,
+		ContentType: contentType,
+		AudioBase64: base64.StdEncoding.EncodeToString(audioBytes),
+		Bytes:       len(audioBytes),
+		LatencyMs:   elapsed,
+	}, nil
 }

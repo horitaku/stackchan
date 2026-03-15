@@ -203,6 +203,12 @@
 | P3-1 | Provider インターフェースを定義 | 高 | Copilot | P2-2 | STT、LLM、TTS を interface-first で実装済み | 完了 |
 | P3-2 | Provider 呼び出しポリシーを導入 | 高 | Copilot | P3-1 | timeout / retry / cancel / error mapping を実装済み | 完了 |
 | P4-1 | audio バイナリ転送を実装 | 高 | TBD | P3-2 | WebSocket binary と Opus フレーム受け渡し | 計画済み |
+| P8-08 | interrupt 系イベントを protocol へ正式追加 | 高 | TBD | P4-1 | `conversation.cancel` / `tts.stop` / `audio.stream_abort` を schema-first で追加 | 計画済み |
+| P8-09 | firmware に最小 conversation 状態遷移を実装 | 高 | TBD | P8-08 | `idle/listening/thinking/speaking/interrupted/error` の遷移を最小導入 | 計画済み |
+| P8-10 | Opus 経路の計測項目を runtime metrics へ追加 | 高 | TBD | P8-05, P8-04 | first frame / cadence jitter / E2E latency を収集して可視化へ接続 | 計画済み |
+| P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備 | 高 | TBD | P8-01 | `voicevox` サービス追加、`VOICEVOX_BASE_URL` 接続確認、起動/復旧手順を整備 | 計画済み |
+| P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加 | 高 | TBD | P8-11 | テキスト入力 -> 音声生成 -> UI 内確認の最小テスト導線を追加 | 計画済み |
+| P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加 | 高 | TBD | P8-12 | Stackchan 連携時の再生結果と遅延を確認できるテスト導線を追加 | 計画済み |
 
 ## 11. 意思決定ログ
 

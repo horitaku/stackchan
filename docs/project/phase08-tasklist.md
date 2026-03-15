@@ -16,6 +16,12 @@
 | P8-05 | WebSocket binary Opus パスの統合を進める | binary 音声フレーム受信処理、検証ログ、互換性メモ | 中 | 低遅延化に重要だが、現行 PCM パスで最小運用は可能なため | Planned |
 | P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Planned |
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
+| P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Planned |
+| P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Planned |
+| P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Planned |
+| P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Planned |
+| P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Planned |
+| P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Planned |
 
 ## 2.1 実行メモ（2026-03-15）
 
@@ -39,6 +45,27 @@
 - `firmware/app/stackchan/session.cpp` で Avatar 初期化（`init`）と neutral 顔の起動表示を追加しました。
 - `avatar.expression` 受信時に m5stack-avatar の `Expression` へ変換して反映する処理を追加しました。
 - `tts.end` 再生中の lip level を `setMouthOpenRatio` へ接続し、口パクを描画へ反映しました。
+
+## 2.4 追加タスクの着手条件（2026-03-15）
+
+- P8-08 interrupt 正式化
+  - `protocol/websocket/events.md` にイベント定義の方向性と error semantics を追記済みであること
+  - `protocol/websocket/schemas/` と `protocol/examples/` に追加先の配置方針が合意済みであること
+- P8-09 firmware 状態遷移
+  - `docs/architecture/conversation-state-machine.md` を基準仕様として採用済みであること
+  - 既存の再生/表情実装（P8-07）を壊さない最小統合方針を確認済みであること
+- P8-10 Opus 計測項目
+  - `P8-05` の binary Opus パス統合タスクと連携し、計測点（受信時刻、再生開始時刻）が取得可能であること
+  - `runtime_metrics` 永続化（P8-04）との項目名・単位を先に合意していること
+- P8-11 Voicevox 前倒し整備
+  - `infra/docker/docker-compose.yml` にサービス追加可能なネットワーク/ポート方針が合意済みであること
+  - server 側の `VOICEVOX_BASE_URL` 設定値と compose サービス名の対応を確認済みであること
+- P8-12 WebUI UI 単体テスト
+  - `P8-11` 完了後に Voicevox API への疎通がローカル compose 上で確認できていること
+  - WebUI 側でテスト入力と結果表示の最小 UI 追加方針が合意済みであること
+- P8-13 WebUI Stackchan 連携テスト
+  - `P8-12` の UI 単体テストで音声生成の成功が確認できていること
+  - Stackchan 接続状態を確認する API（または既存 runtime overview）と連携判定条件が合意済みであること
 
 ## 3. フェーズ 7 からの前提条件
 

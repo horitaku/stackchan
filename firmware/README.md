@@ -182,3 +182,30 @@ firmware/
 ```json
 {"type":"motion.play","timestamp":"2026-03-15T10:00:09Z","session_id":"<session_id>","sequence":101,"version":"1.0","payload":{"request_id":"stream-001","motion":"nod","speed":1.0}}
 ```
+
+## 9. P8-07 最小確認（M5Stack-Avatar 顔表示先行）
+
+### 9.1 期待挙動
+
+- 起動直後に M5Stack-Avatar の顔が表示されること
+- `session.welcome` 受信後に待機状態へ遷移し、顔表示が継続すること
+- `avatar.expression` イベントで表情が切り替わること
+- `tts.end` による再生中、口開閉が追従すること
+
+### 9.2 画面での確認手順
+
+1. firmware を起動し、顔描画が表示されることを確認します。
+2. サーバー接続完了後、顔が維持されることを確認します。
+3. サーバーから `avatar.expression` を送信し、表情が変わることを確認します。
+4. 音声再生を発火させ、口パクが動くことを確認します。
+
+`avatar.expression` 送信例:
+
+```json
+{"type":"avatar.expression","timestamp":"2026-03-15T11:30:00Z","session_id":"<session_id>","sequence":120,"version":"1.0","payload":{"request_id":"stream-002","expression":"happy","intensity":0.9}}
+```
+
+### 9.3 注意点
+
+- `surprised` は m5stack-avatar の都合で `Doubt` 表情へマッピングされます。
+- モーション演出（`nod`/`shake`）は顔回転を瞬間的に与え、次周期でニュートラル回転へ戻します。

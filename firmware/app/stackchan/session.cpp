@@ -27,6 +27,12 @@ void StackchanSession::begin() {
   _mic.begin();
   _ttsPlayer.begin();
 
+  // P8-07: M5Stack-Avatar の顔描画を開始します。
+  _avatar.init();
+  _avatar.setExpression(m5avatar::Expression::Neutral);
+  _avatar.setSpeechText("Connecting...");
+  _avatarReady = true;
+
   // WebSocket クライアントの設定
   _ws.setUrl(String(FW_WS_URL));
   _ws.setReconnectPolicy({FW_RECONNECT_BASE_MS, FW_RECONNECT_MAX_MS});
@@ -84,7 +90,7 @@ void StackchanSession::loop() {
 
   // TTS 再生状態を更新します。
   _ttsPlayer.update();
-  renderAvatarOverlay();
+  updateAvatarFace();
 
   // Active 状態でのみ heartbeat を定期送信します
   if (_state == SessionState::Active) {
@@ -313,6 +319,9 @@ void StackchanSession::handleWelcome(const String& payloadJson,
 
   setState(SessionState::Active);
   _lastHeartbeatMs = millis();
+  if (_avatarReady) {
+    _avatar.setSpeechText("Ready");
+  }
 
   Serial.printf("[Session] welcome accepted → Active\n");
   Serial.printf("[Session] session_id=%s heartbeat_interval_ms=%lu\n",
@@ -385,6 +394,9 @@ void StackchanSession::handleAvatarExpression(const String& payloadJson) {
 
   const char* expression = payload["expression"] | "neutral";
   _expression = String(expression);
+  if (_avatarReady) {
+    _avatar.setExpression(toAvatarExpression(_expression));
+  }
   Serial.printf("[Avatar] expression=%s\n", _expression.c_str());
 }
 
@@ -402,6 +414,16 @@ void StackchanSession::handleMotionPlay(const String& payloadJson) {
     M5.Speaker.tone(700, 40);
   }
 
+  if (_avatarReady) {
+    if (_motion == "nod") {
+      _avatar.setRotation(0.10f);
+    } else if (_motion == "shake") {
+      _avatar.setRotation(-0.10f);
+    } else {
+      _avatar.setRotation(0.0f);
+    }
+  }
+
   Serial.printf("[Avatar] motion=%s\n", _motion.c_str());
 }
 
@@ -417,27 +439,50 @@ void StackchanSession::handleError(const String& payloadJson) {
     code, message, (int)retry);
 }
 
-void StackchanSession::renderAvatarOverlay() {
-  // 描画更新は 80ms 周期に制限します（表示処理の負荷抑制）。
+void StackchanSession::updateAvatarFace() {
+  // 更新は 80ms 周期に制限します（描画処理の負荷抑制）。
   const unsigned long now = millis();
   if (now - _lastAvatarRenderMs < 80) {
     return;
   }
   _lastAvatarRenderMs = now;
 
-  const float lip = _ttsPlayer.lipLevel();
-  const int mouthWidth = static_cast<int>(lip * 80.0f);
+  if (!_avatarReady) {
+    return;
+  }
 
-  // 画面下部に簡易アバター状態を描画します。
-  M5.Display.fillRect(0, 180, 320, 60, TFT_BLACK);
-  M5.Display.setCursor(6, 184);
-  M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-  M5.Display.printf("Expr:%s  Motion:%s", _expression.c_str(), _motion.c_str());
-  M5.Display.setCursor(6, 202);
-  M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-  M5.Display.printf("Playback:%d Req:%s", (int)_ttsPlayer.state(), _currentRequestId.c_str());
-  M5.Display.drawRect(200, 200, 100, 16, TFT_WHITE);
-  M5.Display.fillRect(202, 202, mouthWidth, 12, TFT_GREEN);
+  const float lip = _ttsPlayer.lipLevel();
+  _avatar.setMouthOpenRatio(lip);
+
+  // 再生中のみ口パクメタ情報を表示し、待機時は最小ラベル表示に戻します。
+  if (_ttsPlayer.state() == Audio::PlaybackState::Playing) {
+    String speech = String("Req:") + _currentRequestId;
+    _avatar.setSpeechText(speech.c_str());
+  } else {
+    _avatar.setSpeechText(_expression.c_str());
+  }
+
+  // 回転は毎周期で減衰させ、モーション演出後に自然復帰させます。
+  if (_motion == "nod" || _motion == "shake") {
+    _avatar.setRotation(0.0f);
+    _motion = "idle";
+  }
+}
+
+m5avatar::Expression StackchanSession::toAvatarExpression(const String& expression) const {
+  if (expression == "happy") {
+    return m5avatar::Expression::Happy;
+  }
+  if (expression == "sad") {
+    return m5avatar::Expression::Sad;
+  }
+  if (expression == "surprised") {
+    return m5avatar::Expression::Doubt;
+  }
+  if (expression == "angry") {
+    return m5avatar::Expression::Angry;
+  }
+  return m5avatar::Expression::Neutral;
 }
 
 bool StackchanSession::decodeBase64(const String& src, uint8_t** out, size_t* outLen) {

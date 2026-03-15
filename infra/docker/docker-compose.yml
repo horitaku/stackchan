@@ -1,0 +1,49 @@
+services:
+  stackchan-server:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    image: stackchan-server:local
+    container_name: stackchan-server
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      SERVER_ADDR: ${SERVER_ADDR:-:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-replace-with-openai-api-key}
+      OPENAI_MODEL_CHAT: ${OPENAI_MODEL_CHAT:-gpt-4o-mini}
+      OPENAI_MODEL_STT: ${OPENAI_MODEL_STT:-gpt-4o-mini-transcribe}
+      VOICEVOX_BASE_URL: ${VOICEVOX_BASE_URL:-http://voicevox:50021}
+      DATABASE_URL: ${DATABASE_URL:-postgres://stackchan:change-me@db:5432/stackchan?sslmode=disable}
+      SESSION_SECRET: ${SESSION_SECRET:-replace-with-long-random-secret}
+      WS_READ_TIMEOUT: ${WS_READ_TIMEOUT:-45}
+      WS_WRITE_TIMEOUT: ${WS_WRITE_TIMEOUT:-30}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      PROVIDER_TIMEOUT_MS: ${PROVIDER_TIMEOUT_MS:-3000}
+      PROVIDER_MAX_ATTEMPTS: ${PROVIDER_MAX_ATTEMPTS:-2}
+      PROVIDER_RETRY_BASE_DELAY_MS: ${PROVIDER_RETRY_BASE_DELAY_MS:-100}
+    ports:
+      - "8080:8080"
+
+  db:
+    image: postgres:16-alpine
+    container_name: stackchan-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-stackchan}
+      POSTGRES_USER: ${POSTGRES_USER:-stackchan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stackchan} -d ${POSTGRES_DB:-stackchan}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <Avatar.h>
 #include "../../runtime/network/wifi.h"
 #include "../../runtime/network/ws_client.h"
 #include "../../runtime/audio/mic_reader.h"
@@ -86,6 +87,8 @@ class StackchanSession {
   String _expression{"neutral"};
   String _motion{"idle"};
   unsigned long _lastAvatarRenderMs{0};
+  m5avatar::Avatar _avatar;
+  bool _avatarReady{false};
 
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
@@ -98,7 +101,8 @@ class StackchanSession {
   // 送信ヘルパー
   void sendHello();
   void sendHeartbeat();
-  void renderAvatarOverlay();
+  void updateAvatarFace();
+  m5avatar::Expression toAvatarExpression(const String& expression) const;
   bool decodeBase64(const String& src, uint8_t** out, size_t* outLen);
 
   // 受信イベントハンドラ（P6 で avatar / motion を追加）

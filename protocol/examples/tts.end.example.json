@@ -6,9 +6,9 @@
   "version": "1.0",
   "payload": {
     "request_id": "stream-001",
-    "audio_base64": "AAABAAIAAwAEAAUA",
     "duration_ms": 1200,
     "sample_rate_hz": 16000,
-    "codec": "pcm"
+    "codec": "pcm",
+    "total_chunks": 4
   }
 }

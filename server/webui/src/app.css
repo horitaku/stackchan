@@ -220,6 +220,10 @@ select {
   min-height: 1.2em;
 }
 
+.hero-message {
+  margin-top: 8px;
+}
+
 @keyframes rise {
   from {
     opacity: 0;

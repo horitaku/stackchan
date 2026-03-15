@@ -23,6 +23,7 @@
     updated_at: "-"
   };
   let settingsMessage = "";
+  let overviewMessage = "";
   let pipelineTestResult = "未実行";
   let timerId;
 
@@ -42,6 +43,16 @@
 
   async function loadOverview() {
     snapshot = await fetchJSON("/api/runtime/overview");
+  }
+
+  async function refreshOverviewNow() {
+    overviewMessage = "更新中...";
+    try {
+      await loadOverview();
+      overviewMessage = `更新しました (${new Date().toLocaleTimeString("ja-JP")})`;
+    } catch (err) {
+      overviewMessage = `更新失敗: ${err.message}`;
+    }
   }
 
   async function loadSettings() {
@@ -111,9 +122,10 @@
     <h1>Stackchan Runtime Console</h1>
     <p>接続状態・再生状態・会話遅延・設定変更・疎通テストを 1 画面で確認します。</p>
     <div class="controls">
-      <button class="btn btn-primary" on:click={() => loadOverview().catch(() => undefined)}>今すぐ更新</button>
+      <button class="btn btn-primary" on:click={refreshOverviewNow}>今すぐ更新</button>
       <span class="updated-at">更新: {snapshot.updated_at || "-"}</span>
     </div>
+    <p class="message hero-message">{overviewMessage}</p>
   </header>
 
   <section class="grid">

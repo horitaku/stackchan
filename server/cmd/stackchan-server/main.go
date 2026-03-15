@@ -47,6 +47,7 @@ func main() {
 	orchestrator := conversation.NewOrchestrator(&mock.STT{}, &mock.LLM{}, &mock.TTS{}, policy)
 	wsHandler := web.NewWSHandler(manager, readTimeout, writeTimeout, orchestrator)
 	apiHandler := web.NewAPIHandler(wsHandler.RuntimeState(), web.NewSettingsStore(), orchestrator)
+	apiHandler.AttachWSHandler(wsHandler)
 
 	r := gin.New()
 	r.Use(gin.Recovery())

@@ -1,7 +1,15 @@
 package web
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +23,8 @@ type APIHandler struct {
 	runtimeState  *RuntimeState
 	settingsStore *SettingsStore
 	orchestrator  *conversation.Orchestrator
+	voicevoxBase  string
+	httpClient    *http.Client
 }
 
 // TestPipelineRequest は疎通テスト API の入力です。
@@ -23,15 +33,44 @@ type TestPipelineRequest struct {
 	StreamID  string `json:"stream_id"`
 }
 
+// VoicevoxUITestRequest は WebUI 単体 TTS テスト API の入力です。
+type VoicevoxUITestRequest struct {
+	Text            string   `json:"text"`
+	Speaker         int      `json:"speaker"`
+	SpeedScale      *float64 `json:"speed_scale,omitempty"`
+	PitchScale      *float64 `json:"pitch_scale,omitempty"`
+	IntonationScale *float64 `json:"intonation_scale,omitempty"`
+	VolumeScale     *float64 `json:"volume_scale,omitempty"`
+}
+
 // NewAPIHandler は APIHandler を初期化します。
 func NewAPIHandler(runtimeState *RuntimeState, settingsStore *SettingsStore, orchestrator *conversation.Orchestrator) *APIHandler {
+	baseURL := strings.TrimRight(os.Getenv("VOICEVOX_BASE_URL"), "/")
+	if baseURL == "" {
+		baseURL = "http://voicevox:50021"
+	}
+	return NewAPIHandlerWithVoicevox(runtimeState, settingsStore, orchestrator, baseURL)
+}
+
+// NewAPIHandlerWithVoicevox は Voicevox URL を指定して APIHandler を初期化します。
+func NewAPIHandlerWithVoicevox(runtimeState *RuntimeState, settingsStore *SettingsStore, orchestrator *conversation.Orchestrator, voicevoxBase string) *APIHandler {
 	if runtimeState == nil {
 		runtimeState = NewRuntimeState()
 	}
 	if settingsStore == nil {
 		settingsStore = NewSettingsStore()
 	}
-	return &APIHandler{runtimeState: runtimeState, settingsStore: settingsStore, orchestrator: orchestrator}
+	trimmed := strings.TrimRight(strings.TrimSpace(voicevoxBase), "/")
+	if trimmed == "" {
+		trimmed = "http://voicevox:50021"
+	}
+	return &APIHandler{
+		runtimeState:  runtimeState,
+		settingsStore: settingsStore,
+		orchestrator:  orchestrator,
+		voicevoxBase:  trimmed,
+		httpClient:    &http.Client{Timeout: 15 * time.Second},
+	}
 }
 
 // RegisterRoutes は API ルートを登録します。
@@ -40,6 +79,7 @@ func (h *APIHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/settings", h.GetSettings)
 	r.PUT("/settings", h.UpdateSettings)
 	r.POST("/tests/pipeline", h.RunPipelineTest)
+	r.POST("/tests/voicevox/ui", h.RunVoicevoxUITest)
 }
 
 // GetRuntimeOverview は可観測性スナップショットを返します。
@@ -121,5 +161,111 @@ func (h *APIHandler) RunPipelineTest(c *gin.Context) {
 		"tts_latency_ms":   result.TTSLatencyMs,
 		"total_latency_ms": result.TotalLatencyMs,
 		"duration_ms":      result.TTSDuration,
+	})
+}
+
+// RunVoicevoxUITest は WebUI から Voicevox の UI 単体テストを実行します。
+func (h *APIHandler) RunVoicevoxUITest(c *gin.Context) {
+	var req VoicevoxUITestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		text = "こんにちは、Stackchan の Voicevox テストです。"
+	}
+	speaker := req.Speaker
+	if speaker <= 0 {
+		speaker = 1
+	}
+
+	queryURL := h.voicevoxBase + "/audio_query?text=" + url.QueryEscape(text) + "&speaker=" + url.QueryEscape(strconv.Itoa(speaker))
+	queryReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, queryURL, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build voicevox query request"})
+		return
+	}
+
+	start := time.Now()
+	queryResp, err := h.httpClient.Do(queryReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox audio_query request failed"})
+		return
+	}
+	defer queryResp.Body.Close()
+
+	if queryResp.StatusCode < 200 || queryResp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(queryResp.Body, 2048))
+		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox audio_query failed", "detail": string(body)})
+		return
+	}
+
+	var audioQuery map[string]any
+	if err := json.NewDecoder(queryResp.Body).Decode(&audioQuery); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to decode voicevox audio_query response"})
+		return
+	}
+
+	if req.SpeedScale != nil {
+		audioQuery["speedScale"] = *req.SpeedScale
+	}
+	if req.PitchScale != nil {
+		audioQuery["pitchScale"] = *req.PitchScale
+	}
+	if req.IntonationScale != nil {
+		audioQuery["intonationScale"] = *req.IntonationScale
+	}
+	if req.VolumeScale != nil {
+		audioQuery["volumeScale"] = *req.VolumeScale
+	}
+
+	queryBody, err := json.Marshal(audioQuery)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode synthesis payload"})
+		return
+	}
+
+	synthURL := h.voicevoxBase + "/synthesis?speaker=" + url.QueryEscape(strconv.Itoa(speaker))
+	synthReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, synthURL, bytes.NewReader(queryBody))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build voicevox synthesis request"})
+		return
+	}
+	synthReq.Header.Set("Content-Type", "application/json")
+
+	synthResp, err := h.httpClient.Do(synthReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox synthesis request failed"})
+		return
+	}
+	defer synthResp.Body.Close()
+
+	if synthResp.StatusCode < 200 || synthResp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(synthResp.Body, 2048))
+		c.JSON(http.StatusBadGateway, gin.H{"error": "voicevox synthesis failed", "detail": string(body)})
+		return
+	}
+
+	audioBytes, err := io.ReadAll(synthResp.Body)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read voicevox synthesis response"})
+		return
+	}
+
+	elapsed := time.Since(start).Milliseconds()
+	contentType := synthResp.Header.Get("Content-Type")
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "audio/wav"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"text":         text,
+		"speaker":      speaker,
+		"content_type": contentType,
+		"audio_base64": base64.StdEncoding.EncodeToString(audioBytes),
+		"bytes":        len(audioBytes),
+		"latency_ms":   elapsed,
 	})
 }

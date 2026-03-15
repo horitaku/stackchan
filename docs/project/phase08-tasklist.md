@@ -19,8 +19,8 @@
 | P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Planned |
 | P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Planned |
 | P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Planned |
-| P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Planned |
-| P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Planned |
+| P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Done |
+| P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Done |
 | P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Planned |
 
 ## 2.1 実行メモ（2026-03-15）
@@ -36,8 +36,8 @@
 
 ## 2.2 優先順メモ（2026-03-15 更新）
 
-- ローカル環境に Docker が未導入のため、`P8-01` のローカル動作検証は後回しにします。
-- 先行着手は `P8-07`（firmware の M5Stack-Avatar 顔表示）とし、デバイス表示体験を先に固めます。
+- ローカル環境に Docker を導入し、`P8-01` のローカル動作検証を再開しました。
+- `P8-07` 先行で確立したデバイス体験を維持しつつ、phase8 の運用タスクを順次前倒しします。
 
 ## 2.3 P8-07 実行メモ（2026-03-15）
 
@@ -66,6 +66,48 @@
 - P8-13 WebUI Stackchan 連携テスト
   - `P8-12` の UI 単体テストで音声生成の成功が確認できていること
   - Stackchan 接続状態を確認する API（または既存 runtime overview）と連携判定条件が合意済みであること
+
+## 2.5 P8-01 ローカル再実行メモ（2026-03-15）
+
+- `mise` から Docker compose を操作できるよう、次のタスクを追加しました。
+  - `infra:build`
+  - `infra:up`
+  - `infra:down`
+  - `infra:ps`
+  - `infra:logs`
+- Docker build の `vite: Permission denied` は、`server/webui/node_modules` が build context に含まれていたことが原因でした。
+  - リポジトリルートに `.dockerignore` を追加し、`**/node_modules` と `**/dist` を除外しました。
+- 再実行結果:
+  - `mise run infra:up` 成功
+  - `mise run infra:ps` で `stackchan-server` / `stackchan-db` の起動を確認
+  - `mise run server:healthz` で `STATUS=200` を確認
+
+## 2.6 P8-11 Voicevox 前倒し整備メモ（2026-03-15）
+
+- `infra/docker/docker-compose.yml` に `voicevox` サービスを追加しました。
+  - image: `voicevox/voicevox_engine:cpu-ubuntu20.04-latest`
+  - port: `50021:50021`
+- `stackchan-server` の `depends_on` に `voicevox` を追加しました（`service_started`）。
+- 検証結果:
+  - `mise run infra:up` で `stackchan-voicevox` を含む全サービス起動に成功
+  - `mise run infra:ps` で `stackchan-voicevox` の稼働を確認
+  - `curl -fsS http://127.0.0.1:50021/version` が `"latest"` を返却
+  - `mise run server:healthz` が `STATUS=200` を返却
+
+## 2.7 P8-12 WebUI UI 単体テスト導線メモ（2026-03-15）
+
+- server に `POST /api/tests/voicevox/ui` を追加し、Voicevox の `audio_query` / `synthesis` を呼び出して音声を返す API を実装しました。
+- WebUI に Voicevox UI 単体テストパネルを追加しました。
+  - 入力テキスト
+  - speaker 指定
+  - テスト実行
+  - 生成音声の即時再生
+  - JSON 結果表示
+- `.env` を作成し、ローカル検証用の `VOICEVOX_BASE_URL` と `DATABASE_URL` を設定しました。
+- 検証結果:
+  - `go test ./...` 成功
+  - `npm run build` 成功
+  - `POST /api/tests/voicevox/ui` が `audio_base64` を返却することを確認
 
 ## 3. フェーズ 7 からの前提条件
 

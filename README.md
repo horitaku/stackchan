@@ -61,6 +61,16 @@
   - `mise run server:run`
 - サーバーヘルスチェック
   - `mise run server:healthz`
+- Docker compose ビルド
+  - `mise run infra:build`
+- Docker compose 起動（バックグラウンド）
+  - `mise run infra:up`
+- Docker compose 状態確認
+  - `mise run infra:ps`
+- Docker compose ログ確認
+  - `mise run infra:logs`
+- Docker compose 停止
+  - `mise run infra:down`
 - firmware ビルド
   - `mise run fw:build`
 - firmware 書き込み（自動検出ポート）

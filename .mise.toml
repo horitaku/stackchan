@@ -52,3 +52,23 @@ run = "node ./tools/mise/server.cjs restart"
 [tasks."server:restart:bg"]
 description = "Stop TCP/8080 process, build WebUI, and run development server in background"
 run = "node ./tools/mise/server.cjs restart_bg"
+
+[tasks."infra:build"]
+description = "Build Docker compose services for local runtime"
+run = "node ./tools/mise/docker.cjs build"
+
+[tasks."infra:up"]
+description = "Build and start Docker compose services in background"
+run = "node ./tools/mise/docker.cjs up"
+
+[tasks."infra:down"]
+description = "Stop Docker compose services"
+run = "node ./tools/mise/docker.cjs down"
+
+[tasks."infra:ps"]
+description = "Show Docker compose service status"
+run = "node ./tools/mise/docker.cjs ps"
+
+[tasks."infra:logs"]
+description = "Show Docker compose logs (tail)"
+run = "node ./tools/mise/docker.cjs logs"

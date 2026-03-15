@@ -24,7 +24,7 @@
             "codec": {
               "type": "string",
               "enum": ["opus", "pcm"],
-              "description": "音声コーデック。Phase 5 では pcm、Phase 6 以降では opus を使用します"
+              "description": "音声コーデック。正式運用は opus を標準とし、pcm は開発互換 fallback として許容します"
             },
             "sample_rate_hz": {
               "type": "integer",

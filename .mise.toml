@@ -26,8 +26,12 @@ run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/fw.ps1 -
 description = "Check server healthz endpoint"
 run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action healthz"
 
+[tasks."webui:build"]
+description = "Build WebUI (Svelte/Vite)"
+run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action build_ui"
+
 [tasks."server:run"]
-description = "Run development server (Go + Gin)"
+description = "Build WebUI and run development server (Go + Gin)"
 run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action run"
 
 [tasks."server:kill8080"]
@@ -35,9 +39,9 @@ description = "Stop processes using TCP port 8080"
 run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action kill8080"
 
 [tasks."server:restart"]
-description = "Stop TCP/8080 process and run development server"
+description = "Stop TCP/8080 process, build WebUI, and run development server"
 run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action restart"
 
 [tasks."server:restart:bg"]
-description = "Stop TCP/8080 process and run development server in background"
+description = "Stop TCP/8080 process, build WebUI, and run development server in background"
 run = "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/mise/server.ps1 -Action restart_bg"

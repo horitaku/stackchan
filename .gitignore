@@ -44,6 +44,10 @@ dist/
 out/
 tmp/
 
+# Runtime logs
+.logs/
+*.log
+
 # Firmware build outputs
 firmware/**/.pio/
 firmware/**/.pioenvs/
@@ -55,6 +59,10 @@ webui/node_modules/
 webui/.svelte-kit/
 webui/build/
 webui/dist/
+server/webui/node_modules/
+server/webui/.svelte-kit/
+server/webui/build/
+server/webui/dist/
 
 # Compiled binaries and firmware images
 *.exe

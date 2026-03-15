@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,8 @@ type WSHandler struct {
 	readTimeoutSec  int
 	writeTimeoutSec int
 	orchestrator    *conversation.Orchestrator
+	runtimeState    *RuntimeState
+	mu              sync.Mutex
 }
 
 type audioChunkPayload struct {
@@ -55,12 +58,19 @@ type heartbeatPayload struct {
 // NewWSHandler は WSHandler を初期化して返します。
 // readTimeoutSec / writeTimeoutSec に 0 を指定するとタイムアウトなしになります。
 func NewWSHandler(manager *session.Manager, readTimeoutSec, writeTimeoutSec int, orchestrator *conversation.Orchestrator) *WSHandler {
+	runtimeState := NewRuntimeState()
 	return &WSHandler{
 		manager:         manager,
 		readTimeoutSec:  readTimeoutSec,
 		writeTimeoutSec: writeTimeoutSec,
 		orchestrator:    orchestrator,
+		runtimeState:    runtimeState,
 	}
+}
+
+// RuntimeState は API ハンドラ連携用にランタイム状態ストアを返します。
+func (h *WSHandler) RuntimeState() *RuntimeState {
+	return h.runtimeState
 }
 
 // Handle は GET /ws の WebSocket アップグレードと受信ループを担当します。
@@ -77,8 +87,10 @@ func (h *WSHandler) Handle(c *gin.Context) {
 	log := logging.FromContext(ctx)
 
 	log.Info().Msg("WebSocket connection established")
+	h.runtimeState.OnConnected(s.ID)
 	defer func() {
 		h.manager.Delete(s.ID)
+		h.runtimeState.OnDisconnected()
 		conn.Close()
 		log.Info().Msg("WebSocket connection closed")
 	}()
@@ -251,9 +263,12 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			result, err := h.orchestrator.ProcessAudioStream(ctx, s.ID, requestID, payload.StreamID, chunks)
 			if err != nil {
 				code, message, retryable := providers.ToProtocolError(err)
+				h.runtimeState.OnOutputError()
 				h.writeError(conn, s, code, message, retryable, &env.Type, &env.Sequence)
 				return false
 			}
+			h.runtimeState.OnPipeline(result.RequestID, payload.StreamID, queueWaitMs, result.STTLatencyMs, result.LLMLatencyMs, result.TTSLatencyMs, result.TotalLatencyMs)
+			h.runtimeState.OnPlaybackQueued(result.RequestID, result.TotalLatencyMs, result.TTSDuration)
 
 			// stt.final を送信します
 			sttPayload := protocol.STTFinalPayload{
@@ -262,6 +277,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			}
 			if err := h.sendEvent(conn, s, "stt.final", sttPayload); err != nil {
 				log.Error().Err(err).Msg("failed to send stt.final")
+				h.runtimeState.OnOutputError()
 				return true // 送信失敗は致命的（接続クローズ）
 			}
 
@@ -275,8 +291,11 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			}
 			if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
 				log.Error().Err(err).Msg("failed to send tts.end")
+				h.runtimeState.OnOutputError()
 				return true
 			}
+			h.runtimeState.OnPlaybackSent()
+			h.runtimeState.OnPlaybackCompleted()
 		}
 
 	case "heartbeat":
@@ -290,6 +309,23 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			Int64("uptime_ms", payload.UptimeMs).
 			Int("rssi", payload.RSSI).
 			Msg("heartbeat received")
+		h.runtimeState.OnHeartbeat()
+
+	case "avatar.expression":
+		var payload struct {
+			Expression string `json:"expression"`
+		}
+		if err := json.Unmarshal(env.Payload, &payload); err == nil && payload.Expression != "" {
+			h.runtimeState.OnAvatarExpression(payload.Expression)
+		}
+
+	case "motion.play":
+		var payload struct {
+			Motion string `json:"motion"`
+		}
+		if err := json.Unmarshal(env.Payload, &payload); err == nil && payload.Motion != "" {
+			h.runtimeState.OnAvatarMotion(payload.Motion)
+		}
 
 	default:
 		log.Warn().Str("type", env.Type).Msg("unhandled event type")
@@ -324,6 +360,7 @@ func (h *WSHandler) writeError(
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		logging.Logger.Error().Err(err).Msg("failed to write error envelope")
+		h.runtimeState.OnOutputError()
 	}
 }
 
@@ -339,6 +376,9 @@ func BuildJSONMessage(msgType, sessionID string, sequence int64, payload any) ([
 
 // sendEvent は指定のイベントをオートインクリメントされた sequence 付きで WebSocket へ送信します。
 func (h *WSHandler) sendEvent(conn *websocket.Conn, s *session.Session, msgType string, payload any) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	seq := s.Sequence.NextOutbound()
 	data, err := BuildJSONMessage(msgType, s.ID, seq, payload)
 	if err != nil {

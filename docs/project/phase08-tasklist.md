@@ -14,7 +14,7 @@
 | P8-03 | DB マイグレーション基盤を導入する | migration ツール設定、初期スキーマ、運用手順 | 高 | 永続化機能の先行条件であり後戻りコストが高いため | Done |
 | P8-04 | runtime_metrics 永続化と可視化連携を拡張する | metrics 保存 API/処理、取得 API 拡張、運用確認手順 | 中 | 可観測性の履歴分析を可能にするため | Done |
 | P8-05 | WebSocket binary Opus パスの統合を進める | binary 音声フレーム受信処理、検証ログ、互換性メモ | 中 | 低遅延化に重要だが、現行 PCM パスで最小運用は可能なため | Done |
-| P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Planned |
+| P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Done |
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
 | P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Planned |
 | P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Planned |
@@ -157,6 +157,17 @@
   - クエリ: `session_id` / `request_id` / `metric_name` / `from` / `to` / `limit`
   - `from` / `to` は RFC3339 形式
 - `DATABASE_URL` 未設定時は、既存動作を維持しつつ runtime metrics 永続化を無効化するようにしています。
+
+## 2.12 P8-06 障害復旧ランブック整備メモ（2026-03-17）
+
+- `docs/runbooks/` ディレクトリを新設し、3 本のランブックと統合インデックスを追加しました。
+  - [connection-failure.md](../runbooks/connection-failure.md): Wi-Fi 断、WebSocket 接続失敗、ハンドシェイク失敗、heartbeat タイムアウト、サーバー再起動後の復旧
+  - [provider-latency.md](../runbooks/provider-latency.md): STT/LLM/TTS タイムアウト、Voicevox 停止、レート制限、リトライ設定調整
+  - [configuration-mismatch.md](../runbooks/configuration-mismatch.md): 環境変数ミス、DB 接続エラー、API キー不正、firmware 設定ミス、CORS エラー、metrics 永続化無効
+  - [README.md](../runbooks/README.md): クイックチェックコマンド、ログ確認手順、エンドポイット早見表
+- 各ランブックには実際のログ出力例、診断コマンド、復旧手順、エスカレーション基準を記載しました。
+- `GET /api/runtime/overview` / `GET /api/runtime/metrics` を活用した定量的な確認手順を組み込みました。
+- `docs/runbooks/configuration-mismatch.md` §9 に起動前設定チェックリスト（ワンライナー）を追加しました。
 
 ## 2.11 P8-05 WebSocket binary Opus パス統合メモ（2026-03-17）
 

@@ -12,7 +12,7 @@
 | P8-01 | Docker マルチステージ本番導線を確立する | WebUI build -> Go build -> 最小 runtime までの一貫 Dockerfile、compose 更新 | 高 | ローカル/本番相当の再現性を最優先で確保するため | Done |
 | P8-02 | CI で server テストと WebUI build を必須化する | GitHub Actions の test/build ジョブ、失敗時ログ導線 | 高 | 回帰混入を早期検知するため | Done |
 | P8-03 | DB マイグレーション基盤を導入する | migration ツール設定、初期スキーマ、運用手順 | 高 | 永続化機能の先行条件であり後戻りコストが高いため | Done |
-| P8-04 | runtime_metrics 永続化と可視化連携を拡張する | metrics 保存 API/処理、取得 API 拡張、運用確認手順 | 中 | 可観測性の履歴分析を可能にするため | Planned |
+| P8-04 | runtime_metrics 永続化と可視化連携を拡張する | metrics 保存 API/処理、取得 API 拡張、運用確認手順 | 中 | 可観測性の履歴分析を可能にするため | Done |
 | P8-05 | WebSocket binary Opus パスの統合を進める | binary 音声フレーム受信処理、検証ログ、互換性メモ | 中 | 低遅延化に重要だが、現行 PCM パスで最小運用は可能なため | Planned |
 | P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Planned |
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
@@ -145,6 +145,18 @@
 - 補足:
   - 現 transport は WebSocket/TCP なので、初期優先度は FEC よりも sequence/timestamp と事前バッファです。
   - browser/WebUI 側の AudioWorklet 相当の議論は、firmware では「通信受信と再生消費の分離タスク化」に読み替えて扱います。
+
+## 2.10 P8-04 runtime_metrics 永続化メモ（2026-03-17）
+
+- server に runtime metrics 永続化ストアを追加し、`DATABASE_URL` が設定されている場合に Postgres へ保存するようにしました。
+- `server/internal/web/runtime_state.go` の主要更新点で `runtime_metrics` へメトリクスを書き込む処理を追加しました。
+  - connection: `connection_count` / `reconnect_count`
+  - pipeline: `queue_wait_ms` / `stt_latency_ms` / `llm_latency_ms` / `tts_latency_ms` / `total_latency_ms`
+  - playback: `playback_start_latency_ms` / `playback_duration_ms` / `decode_error_count` / `output_error_count`
+- API 拡張として `GET /api/runtime/metrics` を追加しました。
+  - クエリ: `session_id` / `request_id` / `metric_name` / `from` / `to` / `limit`
+  - `from` / `to` は RFC3339 形式
+- `DATABASE_URL` 未設定時は、既存動作を維持しつつ runtime metrics 永続化を無効化するようにしています。
 
 ## 3. フェーズ 7 からの前提条件
 

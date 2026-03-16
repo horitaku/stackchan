@@ -26,6 +26,7 @@ type APIHandler struct {
 	settingsStore *SettingsStore
 	orchestrator  *conversation.Orchestrator
 	wsHandler     *WSHandler
+	metricsStore  *RuntimeMetricsStore
 	voicevoxBase  string
 	httpClient    *http.Client
 }
@@ -48,9 +49,9 @@ type VoicevoxUITestRequest struct {
 
 // VoicevoxStackchanTestRequest は WebUI から Stackchan 連携テストを実行する入力です。
 type VoicevoxStackchanTestRequest struct {
-	Text     string `json:"text"`
-	Speaker  int    `json:"speaker"`
-	Motion   string `json:"motion,omitempty"`
+	Text       string `json:"text"`
+	Speaker    int    `json:"speaker"`
+	Motion     string `json:"motion,omitempty"`
 	Expression string `json:"expression,omitempty"`
 }
 
@@ -98,9 +99,15 @@ func (h *APIHandler) AttachWSHandler(handler *WSHandler) {
 	h.wsHandler = handler
 }
 
+// AttachRuntimeMetricsStore は runtime_metrics 取得 API で利用する永続ストアを設定します。
+func (h *APIHandler) AttachRuntimeMetricsStore(store *RuntimeMetricsStore) {
+	h.metricsStore = store
+}
+
 // RegisterRoutes は API ルートを登録します。
 func (h *APIHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/runtime/overview", h.GetRuntimeOverview)
+	r.GET("/runtime/metrics", h.GetRuntimeMetrics)
 	r.GET("/settings", h.GetSettings)
 	r.PUT("/settings", h.UpdateSettings)
 	r.POST("/tests/pipeline", h.RunPipelineTest)
@@ -111,6 +118,58 @@ func (h *APIHandler) RegisterRoutes(r gin.IRouter) {
 // GetRuntimeOverview は可観測性スナップショットを返します。
 func (h *APIHandler) GetRuntimeOverview(c *gin.Context) {
 	c.JSON(http.StatusOK, h.runtimeState.Snapshot())
+}
+
+// GetRuntimeMetrics は runtime_metrics の履歴を返します。
+func (h *APIHandler) GetRuntimeMetrics(c *gin.Context) {
+	if h.metricsStore == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "runtime metrics store is not configured"})
+		return
+	}
+
+	query := RuntimeMetricsQuery{
+		SessionID:  c.Query("session_id"),
+		RequestID:  c.Query("request_id"),
+		MetricName: c.Query("metric_name"),
+	}
+
+	if limitRaw := strings.TrimSpace(c.Query("limit")); limitRaw != "" {
+		limit, err := strconv.Atoi(limitRaw)
+		if err != nil || limit <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be a positive integer"})
+			return
+		}
+		query.Limit = limit
+	}
+
+	if fromRaw := strings.TrimSpace(c.Query("from")); fromRaw != "" {
+		from, err := time.Parse(time.RFC3339, fromRaw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "from must be RFC3339"})
+			return
+		}
+		query.From = &from
+	}
+
+	if toRaw := strings.TrimSpace(c.Query("to")); toRaw != "" {
+		to, err := time.Parse(time.RFC3339, toRaw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "to must be RFC3339"})
+			return
+		}
+		query.To = &to
+	}
+
+	rows, err := h.metricsStore.ListMetrics(query)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items": rows,
+		"count": len(rows),
+	})
 }
 
 // GetSettings は現在の設定値を返します。
@@ -259,15 +318,15 @@ func (h *APIHandler) RunVoicevoxStackchanTest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"request_id":    requestID,
-		"session_id":    sessionID,
-		"speaker":       result.Speaker,
-		"text":          result.Text,
-		"voicevox_bytes": result.Bytes,
+		"request_id":          requestID,
+		"session_id":          sessionID,
+		"speaker":             result.Speaker,
+		"text":                result.Text,
+		"voicevox_bytes":      result.Bytes,
 		"voicevox_latency_ms": result.LatencyMs,
-		"sent_event":    "tts.end",
-		"expression":    expression,
-		"motion":        motion,
+		"sent_event":          "tts.end",
+		"expression":          expression,
+		"motion":              motion,
 	})
 }
 

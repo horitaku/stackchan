@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"github.com/horitaku/stackchan/server/internal/conversation"
 	"github.com/horitaku/stackchan/server/internal/logging"
 	"github.com/horitaku/stackchan/server/internal/providers"
 	"github.com/horitaku/stackchan/server/internal/providers/mock"
 	"github.com/horitaku/stackchan/server/internal/session"
 	"github.com/horitaku/stackchan/server/internal/web"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -48,6 +48,20 @@ func main() {
 	wsHandler := web.NewWSHandler(manager, readTimeout, writeTimeout, orchestrator)
 	apiHandler := web.NewAPIHandler(wsHandler.RuntimeState(), web.NewSettingsStore(), orchestrator)
 	apiHandler.AttachWSHandler(wsHandler)
+
+	if databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL")); databaseURL != "" {
+		metricsStore, err := web.NewRuntimeMetricsStore(databaseURL)
+		if err != nil {
+			log.Warn().Err(err).Msg("runtime metrics store is disabled")
+		} else {
+			defer metricsStore.Close()
+			wsHandler.RuntimeState().SetMetricsStore(metricsStore)
+			apiHandler.AttachRuntimeMetricsStore(metricsStore)
+			log.Info().Msg("runtime metrics store enabled")
+		}
+	} else {
+		log.Warn().Msg("DATABASE_URL is empty; runtime metrics persistence is disabled")
+	}
 
 	r := gin.New()
 	r.Use(gin.Recovery())

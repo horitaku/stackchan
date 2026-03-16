@@ -62,6 +62,19 @@ func TestGetRuntimeOverview(t *testing.T) {
 	}
 }
 
+func TestGetRuntimeMetrics_StoreUnavailable(t *testing.T) {
+	ts := newAPITestServer(t)
+	resp, err := http.Get(ts.URL + "/api/runtime/metrics")
+	if err != nil {
+		t.Fatalf("failed to get runtime metrics: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
+	}
+}
+
 func TestUpdateSettings(t *testing.T) {
 	ts := newAPITestServer(t)
 	payload := map[string]any{

@@ -13,7 +13,7 @@
 | P8-02 | CI で server テストと WebUI build を必須化する | GitHub Actions の test/build ジョブ、失敗時ログ導線 | 高 | 回帰混入を早期検知するため | Done |
 | P8-03 | DB マイグレーション基盤を導入する | migration ツール設定、初期スキーマ、運用手順 | 高 | 永続化機能の先行条件であり後戻りコストが高いため | Done |
 | P8-04 | runtime_metrics 永続化と可視化連携を拡張する | metrics 保存 API/処理、取得 API 拡張、運用確認手順 | 中 | 可観測性の履歴分析を可能にするため | Done |
-| P8-05 | WebSocket binary Opus パスの統合を進める | binary 音声フレーム受信処理、検証ログ、互換性メモ | 中 | 低遅延化に重要だが、現行 PCM パスで最小運用は可能なため | Planned |
+| P8-05 | WebSocket binary Opus パスの統合を進める | binary 音声フレーム受信処理、検証ログ、互換性メモ | 中 | 低遅延化に重要だが、現行 PCM パスで最小運用は可能なため | Done |
 | P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Planned |
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
 | P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Planned |
@@ -157,6 +157,25 @@
   - クエリ: `session_id` / `request_id` / `metric_name` / `from` / `to` / `limit`
   - `from` / `to` は RFC3339 形式
 - `DATABASE_URL` 未設定時は、既存動作を維持しつつ runtime metrics 永続化を無効化するようにしています。
+
+## 2.11 P8-05 WebSocket binary Opus パス統合メモ（2026-03-17）
+
+- server 側に音声ユーティリティを追加しました（`server/internal/audio/`）。
+  - codec 検証（`pcm`/`opus`）
+  - フレームサイズ検証（PCM 期待値、Opus 最小サイズ）
+  - STT 入力に使えるコンテナ生成ヘルパー（Opus OGG / PCM WAV）
+- `server/internal/web/ws_handler.go` の更新:
+  - `audio.stream_open` で codec の妥当性を検証
+  - binary 受信時に `stream_id` / `codec` / `payload_bytes` / `frame_index` をログ出力
+  - first frame 到達時に `first_frame_latency_ms` をログ出力
+  - `audio.stream_open` 前に binary が到達した場合は warning を明示
+- `server/internal/session/audio_stream.go` の更新:
+  - `BinaryStreamMeta` に `OpenedAt` と `FirstFrameAt` を追加
+  - `AudioChunk` に `ReceivedAt` を保持（server 内部計測用）
+- 互換性方針:
+  - 既存 PCM binary 経路は維持（後方互換）
+  - Opus は binary payload で受信可能
+  - STT provider 側へ渡す直前の decode/変換は次段階（P8-10）で統合
 
 ## 3. フェーズ 7 からの前提条件
 

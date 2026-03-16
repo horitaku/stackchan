@@ -1,7 +1,10 @@
 // Package providers は STT/LLM/TTS の provider 境界インターフェースを定義します。
 package providers
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // AudioChunk は音声チャンクの最小メタデータです。
 type AudioChunk struct {
@@ -12,6 +15,10 @@ type AudioChunk struct {
 	FrameDurationMs int
 	ChannelCount    int
 	DataBase64      string
+	// ReceivedAt はバイナリフレームをサーバーが受信した時刻です。
+	// P8-10 の計測項目（first frame latency）に使用します。
+	// JSON/wire プロトコルには含まれません（サーバー内部のみ）。
+	ReceivedAt time.Time
 }
 
 // STTRequest は STT へ渡す入力です。

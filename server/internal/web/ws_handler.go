@@ -3,10 +3,10 @@
 package web
 
 import (
-	"encoding/base64"
 	"context"
-	"fmt"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/horitaku/stackchan/server/internal/audio"
 	"github.com/horitaku/stackchan/server/internal/conversation"
 	"github.com/horitaku/stackchan/server/internal/logging"
 	"github.com/horitaku/stackchan/server/internal/protocol"
@@ -219,6 +220,10 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 		}
 		if payload.StreamID == "" || payload.Codec == "" || payload.SampleRateHz <= 0 || payload.FrameDurationMs <= 0 || payload.ChannelCount <= 0 {
 			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "audio.stream_open payload is invalid", false, &env.Type, &env.Sequence)
+			return false
+		}
+		if err := audio.ValidateCodec(payload.Codec); err != nil {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, err.Error(), false, &env.Type, &env.Sequence)
 			return false
 		}
 		s.RegisterBinaryStream(payload.StreamID, session.BinaryStreamMeta{
@@ -517,11 +522,77 @@ func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationM
 }
 
 // handleBinaryFrame はバイナリ WebSocket フレームを Session.AddBinaryAudioFrame 経由で処理します。
+//
 // フレームフォーマット: 先頭 36 バイト = stream_id、残り = 音声データ。
+//
+// P8-05: 以下の検証ログを記録します:
+//   - codec（stream メタから取得）
+//   - payload_bytes（音声データ部分のバイト数）
+//   - expected_bytes（PCM の場合のみ、サンプルレート・フレーム長から計算）
+//   - frame_index（ストリーム内の通し番号）
+//   - first_frame_latency_ms（audio.stream_open からの経過時間。P8-10 計測用）
 func (h *WSHandler) handleBinaryFrame(ctx context.Context, conn *websocket.Conn, s *session.Session, data []byte) {
 	log := logging.FromContext(ctx)
+
+	const uuidLen = 36
+
+	if len(data) < uuidLen {
+		log.Warn().
+			Int("frame_size", len(data)).
+			Int("minimum", uuidLen).
+			Msg("binary frame too short to contain stream_id")
+		h.writeError(conn, s, protocol.ErrCodeInvalidPayload,
+			fmt.Sprintf("binary frame too short: %d bytes", len(data)), false, nil, nil)
+		return
+	}
+
+	streamID := strings.TrimSpace(string(data[:uuidLen]))
+	payloadBytes := len(data) - uuidLen
+
+	if meta, ok := s.GetBinaryStreamMeta(streamID); ok {
+		expectedBytes := audio.ExpectedPCMFrameBytes(meta.Codec, meta.SampleRateHz, meta.FrameDurationMs, meta.ChannelCount)
+		if ok, warning := audio.ValidateFramePayload(meta.Codec, payloadBytes, expectedBytes); !ok {
+			log.Warn().
+				Str("stream_id", streamID).
+				Str("codec", meta.Codec).
+				Int("payload_bytes", payloadBytes).
+				Int("expected_bytes", expectedBytes).
+				Str("warning", warning).
+				Msg("binary frame: unexpected frame size")
+		}
+
+		if meta.NextChunkIndex == 0 && !meta.OpenedAt.IsZero() {
+			firstFrameLatencyMs := time.Since(meta.OpenedAt).Milliseconds()
+			log.Info().
+				Str("stream_id", streamID).
+				Str("codec", meta.Codec).
+				Int("payload_bytes", payloadBytes).
+				Int("expected_bytes", expectedBytes).
+				Int("frame_index", meta.NextChunkIndex).
+				Int64("first_frame_latency_ms", firstFrameLatencyMs).
+				Msg("binary frame: first frame received")
+		} else {
+			log.Debug().
+				Str("stream_id", streamID).
+				Str("codec", meta.Codec).
+				Int("payload_bytes", payloadBytes).
+				Int("frame_index", meta.NextChunkIndex).
+				Msg("binary frame received")
+		}
+	} else {
+		log.Warn().
+			Str("stream_id", streamID).
+			Int("payload_bytes", payloadBytes).
+			Msg("binary frame received before audio.stream_open")
+	}
+
 	if err := s.AddBinaryAudioFrame(data); err != nil {
-		log.Warn().Err(err).Int("frame_size", len(data)).Msg("failed to process binary frame")
+		log.Warn().
+			Err(err).
+			Str("stream_id", streamID).
+			Int("frame_size", len(data)).
+			Int("payload_bytes", payloadBytes).
+			Msg("failed to process binary frame")
 		h.writeError(conn, s, protocol.ErrCodeInvalidPayload, err.Error(), false, nil, nil)
 	}
 }

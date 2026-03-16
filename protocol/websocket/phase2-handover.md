@@ -23,6 +23,6 @@
 
 ## 4. Open Questions
 
-- audio.chunk を将来バイナリ転送へ拡張する際の分離方式
+- audio.chunk を将来バイナリ転送へ拡張する際の分離方式（P8-05 で方針確定: `audio.stream_open` + binary frame + `audio.end` を正式経路として扱い、`audio.chunk` はテキスト経路/デバッグ用途として維持）
 - session.welcome の heartbeat_interval_ms 既定値
 - error code の詳細体系（provider 由来エラーの命名規則）

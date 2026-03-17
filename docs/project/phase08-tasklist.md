@@ -22,8 +22,8 @@
 | P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Done |
 | P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Done |
 | P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Done |
-| P8-14 | tts.chunk を音声フレーム単位へ再設計する | `stream_id` / `chunk_index` / `sent_at or playout_ts` / `frame_duration_ms` / `samples_per_chunk` を含む payload 定義、schema、互換性メモ | 中 | 現在の固定 byte 分割では低遅延再生と欠落検知に不向きなため | Planned |
-| P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Planned |
+| P8-14 | tts.chunk を音声フレーム単位へ再設計する | `stream_id` / `chunk_index` / `sent_at or playout_ts` / `frame_duration_ms` / `samples_per_chunk` を含む payload 定義、schema、互換性メモ | 中 | 現在の固定 byte 分割では低遅延再生と欠落検知に不向きなため | Done |
+| P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Done |
 | P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Planned |
 | P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Planned |
 | P8-18 | Voicevox TTS の downlink を Opus 化し firmware でデコード再生する | server で PCM/WAV -> Opus フレーム化、`tts.chunk` で Opus 配信、firmware で Opus デコード再生、互換 fallback、検証手順 | 中 | 帯域削減と jitter 耐性を強化し、低遅延会話での再生安定性を高めるため | Planned |
@@ -253,6 +253,38 @@
   - server: Voicevox の生成音声（PCM/WAV）を Opus へ変換し、`tts.chunk` と `tts.end(codec=opus)` で downlink 配信
   - firmware: Opus チャンクのデコード再生、既存 `codec=pcm` fallback 維持
   - 運用: `P8-10` の計測項目（first frame latency / cadence jitter / E2E latency）で効果検証
+
+## 2.17 P8-14 tts.chunk 音声フレーム再設計メモ（2026-03-18）
+
+- `protocol/websocket/schemas/tts.chunk.schema.json` を更新し、`version=1.1` のフレーム単位 payload を追加しました。
+  - required: `request_id` / `stream_id` / `chunk_index` / `frame_duration_ms` / `samples_per_chunk` / `audio_base64`
+  - timing: `sent_at` または `playout_ts` の少なくとも一方を必須化
+- 互換性確保のため、schema は `version=1.0`（旧 payload）と `version=1.1`（新 payload）の dual-read を許容します。
+- 更新ファイル:
+  - `protocol/websocket/events.md`
+  - `protocol/versioning.md`
+  - `protocol/websocket/validation-checklist.md`
+  - `protocol/examples/tts.chunk.example.json`
+
+## 2.18 P8-15 firmware 事前バッファ再生パイプラインメモ（2026-03-18）
+
+- `firmware/app/stackchan/session.h` / `session.cpp` に `tts.chunk(v1.1)` 用のリングバッファ再生キューを追加しました。
+  - queue capacity: 32 frames
+  - prebuffer start: 80ms（要件 60〜120ms の範囲内）
+  - low-water: 60ms
+  - high-water: 240ms
+  - playback batch: 40ms
+- `tts.chunk` 受信時に `stream_id` / `frame_duration_ms` / `samples_per_chunk` が存在する場合はフレームキューへ積み、`loop()` 内の消費処理で順次再生します。
+- `tts.end` はストリーム終端マーカーとして扱い、キューの drain 完了で `speaking -> idle` 遷移します。
+- interrupt 系イベント（`conversation.cancel` / `tts.stop` / `audio.stream_abort`）と WS 切断時に再生キューを即時クリアするよう更新しました。
+
+### 手動確認手順（P8-15）
+
+1. firmware を起動し、server と接続した状態で `tts.chunk(v1.1)` を連続送信する
+2. ログに `prebuffer ready` が出力されるまで再生開始しないことを確認する
+3. 再生中に `low-water` 警告が出るケースでも再生ループが継続することを確認する
+4. `tts.end` 後にキューが drain され、`speaking -> idle` へ戻ることを確認する
+5. `tts.stop` または `conversation.cancel` 送信で即時停止し、キューがクリアされることを確認する
 
 ## 3. フェーズ 7 からの前提条件
 

@@ -49,10 +49,11 @@ type VoicevoxUITestRequest struct {
 
 // VoicevoxStackchanTestRequest は WebUI から Stackchan 連携テストを実行する入力です。
 type VoicevoxStackchanTestRequest struct {
-	Text       string `json:"text"`
-	Speaker    int    `json:"speaker"`
-	Motion     string `json:"motion,omitempty"`
-	Expression string `json:"expression,omitempty"`
+	Text         string `json:"text"`
+	Speaker      int    `json:"speaker"`
+	Motion       string `json:"motion,omitempty"`
+	Expression   string `json:"expression,omitempty"`
+	ChunkVersion string `json:"chunk_version,omitempty"`
 }
 
 type voicevoxSynthesisResult struct {
@@ -302,6 +303,14 @@ func (h *APIHandler) RunVoicevoxStackchanTest(c *gin.Context) {
 	if motion == "" {
 		motion = "nod"
 	}
+	chunkVersion := strings.TrimSpace(req.ChunkVersion)
+	if chunkVersion == "" {
+		chunkVersion = "1.0"
+	}
+	if chunkVersion != "1.0" && chunkVersion != "1.1" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chunk_version must be one of: 1.0, 1.1"})
+		return
+	}
 
 	sessionID, err := h.wsHandler.SendTTSTestToActive(
 		requestID,
@@ -311,6 +320,7 @@ func (h *APIHandler) RunVoicevoxStackchanTest(c *gin.Context) {
 		"pcm",
 		expression,
 		motion,
+		chunkVersion,
 	)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -324,7 +334,8 @@ func (h *APIHandler) RunVoicevoxStackchanTest(c *gin.Context) {
 		"text":                result.Text,
 		"voicevox_bytes":      result.Bytes,
 		"voicevox_latency_ms": result.LatencyMs,
-		"sent_event":          "tts.end",
+		"sent_event":          "tts.chunk + tts.end",
+		"chunk_version":       chunkVersion,
 		"expression":          expression,
 		"motion":              motion,
 	})

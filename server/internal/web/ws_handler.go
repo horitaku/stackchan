@@ -41,6 +41,8 @@ type WSHandler struct {
 }
 
 const ttsChunkByteSize = 512
+const ttsChunkFrameDurationMsV11 = 20
+const ttsChunkV11PrebufferFrames = 4
 
 type audioChunkPayload struct {
 	StreamID        string `json:"stream_id"`
@@ -331,7 +333,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 				return true // 送信失敗は致命的（接続クローズ）
 			}
 
-			if err := h.sendTTSAudio(conn, s, result.RequestID, result.TTSAudioBase64, result.TTSDuration, result.TTSSampleHz, "pcm"); err != nil {
+			if err := h.sendTTSAudio(conn, s, result.RequestID, result.TTSAudioBase64, result.TTSDuration, result.TTSSampleHz, "pcm", "1.0"); err != nil {
 				log.Error().Err(err).Msg("failed to send tts.end")
 				h.runtimeState.OnOutputError()
 				return true
@@ -376,10 +378,66 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 	return false
 }
 
-func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, requestID, audioBase64 string, durationMs, sampleRateHz int, codec string) error {
+func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, requestID, audioBase64 string, durationMs, sampleRateHz int, codec, chunkVersion string) error {
 	audioBytes, err := base64.StdEncoding.DecodeString(audioBase64)
 	if err != nil {
 		return fmt.Errorf("failed to decode tts audio base64 for chunking: %w", err)
+	}
+
+	if chunkVersion == "1.1" {
+		streamID := fmt.Sprintf("tts-%s", requestID)
+		samplesPerFrame := (sampleRateHz * ttsChunkFrameDurationMsV11) / 1000
+		if samplesPerFrame <= 0 {
+			samplesPerFrame = 320
+		}
+		frameBytes := samplesPerFrame * 2 // PCM16 mono
+		if frameBytes <= 0 {
+			frameBytes = 640
+		}
+
+		totalChunks := 0
+		if len(audioBytes) > 0 {
+			totalChunks = (len(audioBytes) + frameBytes - 1) / frameBytes
+		}
+
+		for index := 0; index < totalChunks; index++ {
+			start := index * frameBytes
+			end := start + frameBytes
+			if end > len(audioBytes) {
+				end = len(audioBytes)
+			}
+			frame := audioBytes[start:end]
+
+			payload := protocol.TTSChunkPayloadV11{
+				RequestID:       requestID,
+				StreamID:        streamID,
+				ChunkIndex:      index,
+				FrameDurationMs: ttsChunkFrameDurationMsV11,
+				SamplesPerChunk: samplesPerFrame,
+				SentAt:          time.Now().UTC().Format(time.RFC3339),
+				AudioBase64:     base64.StdEncoding.EncodeToString(frame),
+			}
+			if err := h.sendEventWithVersion(conn, s, "tts.chunk", payload, "1.1"); err != nil {
+				return err
+			}
+
+			// firmware 側の事前バッファが枯渇しないよう、初期バースト後はフレーム間隔で送信します。
+			if index >= (ttsChunkV11PrebufferFrames-1) && index < totalChunks-1 {
+				time.Sleep(time.Duration(ttsChunkFrameDurationMsV11) * time.Millisecond)
+			}
+		}
+
+		ttsPayload := protocol.TTSEndPayload{
+			RequestID:    requestID,
+			DurationMs:   durationMs,
+			SampleRateHz: sampleRateHz,
+			Codec:        codec,
+			TotalChunks:  totalChunks,
+		}
+		if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	totalChunks := 0
@@ -450,20 +508,31 @@ func (h *WSHandler) writeError(
 // BuildJSONMessage は任意の型を JSON エンベロープにシリアライズして返します。
 // テストや他のハンドラから利用します。
 func BuildJSONMessage(msgType, sessionID string, sequence int64, payload any) ([]byte, error) {
+	return BuildJSONMessageWithVersion(msgType, sessionID, sequence, payload, protocol.SupportedVersion)
+}
+
+func BuildJSONMessageWithVersion(msgType, sessionID string, sequence int64, payload any, version string) ([]byte, error) {
 	env, err := protocol.NewEnvelope(msgType, sessionID, sequence, payload)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(version) != "" {
+		env.Version = version
 	}
 	return json.Marshal(env)
 }
 
 // sendEvent は指定のイベントをオートインクリメントされた sequence 付きで WebSocket へ送信します。
 func (h *WSHandler) sendEvent(conn *websocket.Conn, s *session.Session, msgType string, payload any) error {
+	return h.sendEventWithVersion(conn, s, msgType, payload, protocol.SupportedVersion)
+}
+
+func (h *WSHandler) sendEventWithVersion(conn *websocket.Conn, s *session.Session, msgType string, payload any, version string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	seq := s.Sequence.NextOutbound()
-	data, err := BuildJSONMessage(msgType, s.ID, seq, payload)
+	data, err := BuildJSONMessageWithVersion(msgType, s.ID, seq, payload, version)
 	if err != nil {
 		return err
 	}
@@ -475,7 +544,7 @@ func (h *WSHandler) sendEvent(conn *websocket.Conn, s *session.Session, msgType 
 
 // SendTTSTestToActive は現在アクティブな handshaked セッションへ tts.end を送信します。
 // 連携テストで視認性を高めるため avatar.expression と motion.play も続けて送信します。
-func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationMs, sampleRateHz int, codec, expression, motion string) (string, error) {
+func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationMs, sampleRateHz int, codec, expression, motion, chunkVersion string) (string, error) {
 	h.mu.Lock()
 	sessionID := h.activeSessionID
 	conn := h.connections[sessionID]
@@ -497,7 +566,11 @@ func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationM
 		codec = "pcm"
 	}
 
-	if err := h.sendTTSAudio(conn, s, requestID, audioBase64, durationMs, sampleRateHz, codec); err != nil {
+	if strings.TrimSpace(chunkVersion) == "" {
+		chunkVersion = "1.0"
+	}
+
+	if err := h.sendTTSAudio(conn, s, requestID, audioBase64, durationMs, sampleRateHz, codec, chunkVersion); err != nil {
 		h.mu.Lock()
 		if h.activeSessionID == sessionID {
 			h.activeSessionID = ""

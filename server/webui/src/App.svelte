@@ -33,6 +33,7 @@
   let stackchanSpeaker = 1;
   let stackchanExpression = "happy";
   let stackchanMotion = "nod";
+  let stackchanChunkVersion = "1.0";
   let stackchanResult = "未実行";
   let timerId;
 
@@ -124,7 +125,8 @@
           text: stackchanText,
           speaker: Number(stackchanSpeaker) || 1,
           expression: stackchanExpression,
-          motion: stackchanMotion
+          motion: stackchanMotion,
+          chunk_version: stackchanChunkVersion
         })
       });
       stackchanResult = JSON.stringify(result, null, 2);
@@ -287,7 +289,7 @@
 
     <section class="card panel">
       <h2>Voicevox Stackchan 連携テスト</h2>
-      <p>接続中の Stackchan へ `tts.end` と表情・モーションを送信して再生を確認します。</p>
+      <p>接続中の Stackchan へ `tts.chunk + tts.end` を送信して再生を確認します。`chunk_version` を切り替えて比較できます。</p>
       <form class="settings-form" on:submit|preventDefault={() => runVoicevoxStackchanTest().catch(() => undefined)}>
         <label>入力テキスト
           <textarea rows="3" bind:value={stackchanText}></textarea>
@@ -308,6 +310,12 @@
             <option value="idle">idle</option>
             <option value="nod">nod</option>
             <option value="shake">shake</option>
+          </select>
+        </label>
+        <label>chunk version
+          <select bind:value={stackchanChunkVersion}>
+            <option value="1.0">1.0 (legacy fixed-byte)</option>
+            <option value="1.1">1.1 (frame-based)</option>
           </select>
         </label>
         <div class="controls">

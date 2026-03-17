@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackchan.local/protocol/websocket/schemas/conversation.cancel.schema.json",
+  "allOf": [
+    {
+      "$ref": "./envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "conversation.cancel"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["reason", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "enum": ["user_interrupt", "barge_in", "timeout", "provider_error", "session_end"]
+            },
+            "source": {
+              "type": "string",
+              "enum": ["touch", "button", "voice", "system"]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

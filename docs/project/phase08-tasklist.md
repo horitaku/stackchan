@@ -16,7 +16,7 @@
 | P8-05 | WebSocket binary Opus パスの統合を進める | binary 音声フレーム受信処理、検証ログ、互換性メモ | 中 | 低遅延化に重要だが、現行 PCM パスで最小運用は可能なため | Done |
 | P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Done |
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
-| P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Planned |
+| P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Done |
 | P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Planned |
 | P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Planned |
 | P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Done |
@@ -187,6 +187,24 @@
   - 既存 PCM binary 経路は維持（後方互換）
   - Opus は binary payload で受信可能
   - STT provider 側へ渡す直前の decode/変換は次段階（P8-10）で統合
+
+## 2.13 P8-08 interrupt 系イベント正式追加メモ（2026-03-18）
+
+- protocol に interrupt 系 3 イベントを正式追加しました。
+  - `conversation.cancel`
+  - `tts.stop`
+  - `audio.stream_abort`
+- 追加成果物:
+  - `protocol/websocket/schemas/conversation.cancel.schema.json`
+  - `protocol/websocket/schemas/tts.stop.schema.json`
+  - `protocol/websocket/schemas/audio.stream_abort.schema.json`
+  - `protocol/examples/conversation.cancel.example.json`
+  - `protocol/examples/tts.stop.example.json`
+  - `protocol/examples/audio.stream_abort.example.json`
+- ドキュメント更新:
+  - `protocol/websocket/events.md` に定義、error semantics、互換性メモを追記
+  - `protocol/websocket/validation-checklist.md` にイベント別検証項目を追記
+  - `protocol/versioning.md` に phase8 追加の運用方針を追記
 
 ## 3. フェーズ 7 からの前提条件
 

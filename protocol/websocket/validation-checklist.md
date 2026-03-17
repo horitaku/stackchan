@@ -13,6 +13,9 @@
 - error の code/message/retryable が存在する
 - audio.chunk の stream_id/chunk_index/codec/data_base64 が存在する
 - audio.end の stream_id/final_chunk_index が存在する
+- conversation.cancel の reason/source が存在する
+- tts.stop の reason が存在する
+- audio.stream_abort の stream_id/reason が存在する
 
 ## Sequence and Ordering
 

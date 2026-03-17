@@ -40,3 +40,9 @@
 
 - すべての example JSON が schema 検証に通ること。
 - 追加変更時は互換性ノートを更新すること。
+
+## 6. Phase 8 Interrupt Additions
+
+- `conversation.cancel` / `tts.stop` / `audio.stream_abort` は新規イベント追加のため、v0（1.x）の additive change として扱う。
+- 受信側は未知イベントを許容し、warning を残して無視できる実装を維持する。
+- 導入順序は server 側受理 -> firmware 側送受信対応 -> strict validation 有効化とする。

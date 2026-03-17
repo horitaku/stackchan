@@ -16,6 +16,9 @@
 - heartbeat （フェーズ 5 追加）
 - avatar.expression （フェーズ 6 追加）
 - motion.play （フェーズ 6 追加）
+- conversation.cancel （フェーズ 8 追加）
+- tts.stop （フェーズ 8 追加）
+- audio.stream_abort （フェーズ 8 追加）
 
 ## 2. Common Envelope
 
@@ -115,6 +118,12 @@
 - binary frame のフォーマット不正時: `invalid_payload`
 - audio.stream_open なしでバイナリフレーム受信時: `invalid_payload`
 
+### 4.2 interrupt 系 error codes (フェーズ 8)
+
+- conversation.cancel 受信時に active conversation が存在しない場合: `invalid_payload`（message: "no active conversation to cancel"）
+- tts.stop 対象の再生が存在しない場合: `invalid_payload`（message: "no active tts playback to stop"）
+- audio.stream_abort の stream_id が未登録の場合: `invalid_payload`（message: "audio stream not found"）
+
 ## 5. フェーズ 4 追加イベント
 
 ### 5.1 audio.stream_open
@@ -200,6 +209,39 @@
   - motion: string (required, enum: idle, nod, shake)
   - speed: number (optional, 0.1–3.0)
 
+### 5.8 conversation.cancel
+
+- Direction: firmware -> server
+- Purpose: 会話処理中にユーザー割り込みを通知し、現在の conversation ターンを中断する
+- JSON Schema: `protocol/websocket/schemas/conversation.cancel.schema.json`
+- Example: `protocol/examples/conversation.cancel.example.json`
+- Payload fields:
+  - request_id: string (optional) — 中断対象の request_id（未指定時は active request を対象）
+  - reason: string (required, enum: user_interrupt, barge_in, timeout, provider_error, session_end)
+  - source: string (required, enum: touch, button, voice, system)
+
+### 5.9 tts.stop
+
+- Direction: server -> firmware
+- Purpose: firmware 側で再生中の TTS を即時停止し、再生キューをクリアする
+- JSON Schema: `protocol/websocket/schemas/tts.stop.schema.json`
+- Example: `protocol/examples/tts.stop.example.json`
+- Payload fields:
+  - request_id: string (optional) — 停止対象の request_id（未指定時は active playback を対象）
+  - reason: string (required, enum: interrupted, superseded, timeout, error, session_end)
+  - clear_queue: boolean (optional, default: true)
+
+### 5.10 audio.stream_abort
+
+- Direction: firmware -> server
+- Purpose: 収音ストリーム送信を途中中断したことを通知し、server 側の入力バッファを破棄する
+- JSON Schema: `protocol/websocket/schemas/audio.stream_abort.schema.json`
+- Example: `protocol/examples/audio.stream_abort.example.json`
+- Payload fields:
+  - stream_id: string (required)
+  - reason: string (required, enum: interrupted, user_cancel, timeout, transport_error, device_error)
+  - final_chunk_index: integer (optional, minimum: 0)
+
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 
 ### 6.1 バイナリ WebSocket フレームの構造
@@ -221,10 +263,13 @@ audio.stream_open 後に送信するバイナリ WebSocket フレームの構造
 - 新規フィールドは optional として追加し、既存フィールドの意味変更は行わない。
 - breaking change は `version` を上げ、移行手順を versioning.md に記載する。
 
-## 8. Next Planned Events
+### 7.1 フェーズ 8 互換性メモ（interrupt 系）
 
-次フェーズで割り込み制御を正式化するため、以下のイベントを追加候補とする。
+- `conversation.cancel` / `tts.stop` / `audio.stream_abort` は新規イベント追加であり、既存イベントの required フィールドは変更しない。
+- 受信側が未知イベントを受けた場合は、warning ログを残して無視してよい（v0 運用の後方互換ポリシー）。
+- interrupt 導入前の実装と共存するため、`request_id` は optional とし active request 解決を許容する。
+- rollout 順序は server 先行（受理のみ） -> firmware 送受信対応 -> strict validation 有効化とする。
 
-- conversation.cancel
-- tts.stop
-- audio.stream_abort
+## 8. Deferred Candidates
+
+interrupt 系 3 イベントはフェーズ 8 で正式化済み。次候補は別途 backlog で管理する。

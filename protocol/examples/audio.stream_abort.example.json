@@ -1,0 +1,12 @@
+{
+  "type": "audio.stream_abort",
+  "timestamp": "2026-03-18T10:24:33Z",
+  "session_id": "sess_01HYZX9Q7P9G7D6XRZ9N4YQ0AZ",
+  "sequence": 43,
+  "version": "1.0",
+  "payload": {
+    "stream_id": "stream_001",
+    "reason": "interrupted",
+    "final_chunk_index": 8
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "type": "tts.stop",
+  "timestamp": "2026-03-18T10:24:32Z",
+  "session_id": "sess_01HYZX9Q7P9G7D6XRZ9N4YQ0AZ",
+  "sequence": 77,
+  "version": "1.0",
+  "payload": {
+    "request_id": "req_01HYZX9NQ1N6X9G8P0YH2E3M4Q",
+    "reason": "interrupted",
+    "clear_queue": true
+  }
+}

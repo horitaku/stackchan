@@ -35,9 +35,13 @@ func (s *Session) AddAudioChunk(chunk providers.AudioChunk) error {
 		s.AudioStreamFirstChunkAt = make(map[string]time.Time)
 	}
 
+	if chunk.ReceivedAt.IsZero() {
+		chunk.ReceivedAt = time.Now()
+	}
+
 	// 最初のチャンク受信時刻を記録します
 	if _, exists := s.AudioStreamFirstChunkAt[chunk.StreamID]; !exists {
-		s.AudioStreamFirstChunkAt[chunk.StreamID] = time.Now()
+		s.AudioStreamFirstChunkAt[chunk.StreamID] = chunk.ReceivedAt
 	}
 
 	// バッファ上限チェック

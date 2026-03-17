@@ -40,13 +40,16 @@ type PlaybackSnapshot struct {
 
 // PipelineSnapshot は会話パイプラインの遅延情報です。
 type PipelineSnapshot struct {
-	StreamID       string `json:"stream_id,omitempty"`
-	RequestID      string `json:"request_id,omitempty"`
-	QueueWaitMs    int64  `json:"queue_wait_ms"`
-	STTLatencyMs   int64  `json:"stt_latency_ms"`
-	LLMLatencyMs   int64  `json:"llm_latency_ms"`
-	TTSLatencyMs   int64  `json:"tts_latency_ms"`
-	TotalLatencyMs int64  `json:"total_latency_ms"`
+	StreamID            string `json:"stream_id,omitempty"`
+	RequestID           string `json:"request_id,omitempty"`
+	QueueWaitMs         int64  `json:"queue_wait_ms"`
+	STTLatencyMs        int64  `json:"stt_latency_ms"`
+	LLMLatencyMs        int64  `json:"llm_latency_ms"`
+	TTSLatencyMs        int64  `json:"tts_latency_ms"`
+	TotalLatencyMs      int64  `json:"total_latency_ms"`
+	FirstFrameLatencyMs int64  `json:"first_frame_latency_ms"`
+	CadenceJitterMs     int64  `json:"cadence_jitter_ms"`
+	E2ELatencyMs        int64  `json:"e2e_latency_ms"`
 }
 
 // AvatarSnapshot はアバター同期の状態です。
@@ -160,6 +163,26 @@ func (s *RuntimeState) OnPipeline(requestID, streamID string, queueWaitMs int64,
 		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.llm_latency_ms", MetricValue: float64(llmMs), MetricUnit: "ms", ObservedAt: now},
 		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.tts_latency_ms", MetricValue: float64(ttsMs), MetricUnit: "ms", ObservedAt: now},
 		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.total_latency_ms", MetricValue: float64(totalMs), MetricUnit: "ms", ObservedAt: now},
+	}
+	s.mu.Unlock()
+	s.persistMetrics(store, metrics)
+}
+
+func (s *RuntimeState) OnOpusMetrics(requestID, streamID string, firstFrameLatencyMs, cadenceJitterMs, e2eLatencyMs int64) {
+	now := time.Now().UTC()
+	s.mu.Lock()
+	sessionID := s.snapshot.Connection.SessionID
+	s.snapshot.Pipeline.RequestID = requestID
+	s.snapshot.Pipeline.StreamID = streamID
+	s.snapshot.Pipeline.FirstFrameLatencyMs = firstFrameLatencyMs
+	s.snapshot.Pipeline.CadenceJitterMs = cadenceJitterMs
+	s.snapshot.Pipeline.E2ELatencyMs = e2eLatencyMs
+	s.touchLocked()
+	store := s.metricsStore
+	metrics := []RuntimeMetricWrite{
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.first_frame_latency_ms", MetricValue: float64(firstFrameLatencyMs), MetricUnit: "ms", ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.cadence_jitter_ms", MetricValue: float64(cadenceJitterMs), MetricUnit: "ms", ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.e2e_latency_ms", MetricValue: float64(e2eLatencyMs), MetricUnit: "ms", ObservedAt: now},
 	}
 	s.mu.Unlock()
 	s.persistMetrics(store, metrics)

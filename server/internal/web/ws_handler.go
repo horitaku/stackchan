@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -269,6 +270,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			return false
 		}
 		if h.orchestrator != nil {
+			streamMeta, _ := s.GetBinaryStreamMeta(payload.StreamID)
 			chunks, firstChunkAt := s.ConsumeAudioStream(payload.StreamID)
 			// 空ストリームチェック: チャンク受信前に audio.end が届いた場合はエラーです
 			if len(chunks) == 0 {
@@ -293,6 +295,27 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 				h.runtimeState.OnOutputError()
 				h.writeError(conn, s, code, message, retryable, &env.Type, &env.Sequence)
 				return false
+			}
+
+			firstFrameLatencyMs := int64(0)
+			cadenceJitterMs := int64(0)
+			e2eLatencyMs := int64(0)
+			if streamMeta != nil {
+				if !streamMeta.OpenedAt.IsZero() {
+					e2eLatencyMs = time.Since(streamMeta.OpenedAt).Milliseconds()
+				}
+				if !streamMeta.FirstFrameAt.IsZero() && !streamMeta.OpenedAt.IsZero() {
+					firstFrameLatencyMs = streamMeta.FirstFrameAt.Sub(streamMeta.OpenedAt).Milliseconds()
+				}
+				cadenceJitterMs = calculateCadenceJitterMs(chunks, streamMeta.FrameDurationMs)
+				h.runtimeState.OnOpusMetrics(result.RequestID, payload.StreamID, firstFrameLatencyMs, cadenceJitterMs, e2eLatencyMs)
+				log.Info().
+					Str("stream_id", payload.StreamID).
+					Str("request_id", result.RequestID).
+					Int64("first_frame_latency_ms", firstFrameLatencyMs).
+					Int64("cadence_jitter_ms", cadenceJitterMs).
+					Int64("e2e_latency_ms", e2eLatencyMs).
+					Msg("opus runtime metrics recorded")
 			}
 			h.runtimeState.OnPipeline(result.RequestID, payload.StreamID, queueWaitMs, result.STTLatencyMs, result.LLMLatencyMs, result.TTSLatencyMs, result.TotalLatencyMs)
 			h.runtimeState.OnPlaybackQueued(result.RequestID, result.TotalLatencyMs, result.TTSDuration)
@@ -595,4 +618,31 @@ func (h *WSHandler) handleBinaryFrame(ctx context.Context, conn *websocket.Conn,
 			Msg("failed to process binary frame")
 		h.writeError(conn, s, protocol.ErrCodeInvalidPayload, err.Error(), false, nil, nil)
 	}
+}
+
+func calculateCadenceJitterMs(chunks []providers.AudioChunk, expectedFrameDurationMs int) int64 {
+	if expectedFrameDurationMs <= 0 || len(chunks) < 2 {
+		return 0
+	}
+
+	expected := float64(expectedFrameDurationMs)
+	var sumAbsDelta float64
+	count := 0
+
+	for i := 1; i < len(chunks); i++ {
+		prevAt := chunks[i-1].ReceivedAt
+		currAt := chunks[i].ReceivedAt
+		if prevAt.IsZero() || currAt.IsZero() {
+			continue
+		}
+		intervalMs := currAt.Sub(prevAt).Seconds() * 1000.0
+		sumAbsDelta += math.Abs(intervalMs - expected)
+		count++
+	}
+
+	if count == 0 {
+		return 0
+	}
+
+	return int64(math.Round(sumAbsDelta / float64(count)))
 }

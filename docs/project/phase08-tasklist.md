@@ -18,7 +18,7 @@
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
 | P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Done |
 | P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Done |
-| P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Planned |
+| P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Done |
 | P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Done |
 | P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Done |
 | P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Done |
@@ -26,6 +26,7 @@
 | P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Planned |
 | P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Planned |
 | P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Planned |
+| P8-18 | Voicevox TTS の downlink を Opus 化し firmware でデコード再生する | server で PCM/WAV -> Opus フレーム化、`tts.chunk` で Opus 配信、firmware で Opus デコード再生、互換 fallback、検証手順 | 中 | 帯域削減と jitter 耐性を強化し、低遅延会話での再生安定性を高めるため | Planned |
 
 ## 2.1 実行メモ（2026-03-15）
 
@@ -226,6 +227,32 @@
   3. `tts.end` 応答で `thinking -> speaking`、再生終了で `speaking -> idle` を確認する
   4. `conversation.cancel` / `tts.stop` / `audio.stream_abort` を送信し、`interrupted -> idle` を確認する
   5. `retryable=false` の `error` を送信し `error` へ遷移、再接続後 `idle` 復帰を確認する
+
+## 2.15 P8-10 Opus 計測項目追加メモ（2026-03-18）
+
+- server の Opus 受信フローで、以下の runtime metrics を追加しました。
+  - `pipeline.first_frame_latency_ms`
+  - `pipeline.cadence_jitter_ms`
+  - `pipeline.e2e_latency_ms`
+- `audio.end` 処理時に `audio.stream_open` 登録時刻とフレーム受信時刻を使って計測値を算出し、`runtime_metrics` へ保存します。
+  - first frame latency: `FirstFrameAt - OpenedAt`
+  - cadence jitter: 連続チャンクの到着間隔と `frame_duration_ms` の平均絶対偏差
+  - E2E latency: `now - OpenedAt`
+- `GET /api/runtime/overview` の `pipeline` スナップショットに反映される項目を追加しました。
+  - `first_frame_latency_ms`
+  - `cadence_jitter_ms`
+  - `e2e_latency_ms`
+- サーバー内で `ReceivedAt` が未設定の音声チャンクも計測可能にするため、`AddAudioChunk` で受信時刻を補完するようにしました。
+- 検証結果:
+  - `cd server && go test ./...` 成功
+
+## 2.16 P8-18 追加メモ（2026-03-18）
+
+- 重複確認の結果、既存の `P8-14`〜`P8-17` は `tts.chunk` のフレーム設計・再生安定化が中心であり、Voicevox TTS の Opus 変換と firmware デコード実装は未登録でした。
+- `P8-18` として次の実装範囲を追加しました。
+  - server: Voicevox の生成音声（PCM/WAV）を Opus へ変換し、`tts.chunk` と `tts.end(codec=opus)` で downlink 配信
+  - firmware: Opus チャンクのデコード再生、既存 `codec=pcm` fallback 維持
+  - 運用: `P8-10` の計測項目（first frame latency / cadence jitter / E2E latency）で効果検証
 
 ## 3. フェーズ 7 からの前提条件
 

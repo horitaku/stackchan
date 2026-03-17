@@ -46,3 +46,18 @@
 - `conversation.cancel` / `tts.stop` / `audio.stream_abort` は新規イベント追加のため、v0（1.x）の additive change として扱う。
 - 受信側は未知イベントを許容し、warning を残して無視できる実装を維持する。
 - 導入順序は server 側受理 -> firmware 側送受信対応 -> strict validation 有効化とする。
+
+## 7. Phase 8 tts.chunk Frame Redesign (P8-14)
+
+- `tts.chunk` は v1.1 でフレーム単位 payload を導入する。
+	- required: `request_id`, `stream_id`, `chunk_index`, `frame_duration_ms`, `samples_per_chunk`, `audio_base64`
+	- timing: `sent_at` または `playout_ts` の少なくとも一方を必須
+- `version=1.0`（旧 payload: `total_chunks` 前提）は互換期間中に限り受理する。
+- 互換分類: 旧 writer に対しては additive（dual-read 前提）。strict に v1.1 必須化する段階では breaking。
+
+### 7.1 Rollout Order
+
+1. Reader（firmware/server）で `version=1.0` と `1.1` の dual-read を有効化する
+2. Writer（server）で `version=1.1` を優先送信し、必要時のみ `1.0` fallback を許容する
+3. 観測期間で `1.0` トラフィックが解消されたことを確認する
+4. `1.0` fallback を削除し、`1.1` を strict 運用へ切り替える

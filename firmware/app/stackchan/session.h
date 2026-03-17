@@ -112,6 +112,33 @@ class StackchanSession {
   int _incomingTTSReceivedChunks{0};
   String _incomingTTSRequestId{""};
 
+  // P8-15: 事前バッファ付き再生キュー（low-water / high-water 管理）
+  static constexpr size_t kTTSFrameQueueCapacity = 32;
+  static constexpr uint16_t kTTSPrebufferStartMs = 80;
+  static constexpr uint16_t kTTSLowWaterMs = 60;
+  static constexpr uint16_t kTTSHighWaterMs = 240;
+  static constexpr uint16_t kTTSPlaybackBatchMs = 40;
+
+  struct TTSFrameSlot {
+    uint8_t* bytes{nullptr};
+    size_t byteLen{0};
+    uint16_t frameDurationMs{0};
+    uint16_t samplesPerChunk{0};
+    int chunkIndex{0};
+  };
+
+  TTSFrameSlot _ttsFrameQueue[kTTSFrameQueueCapacity];
+  size_t _ttsFrameHead{0};
+  size_t _ttsFrameTail{0};
+  size_t _ttsFrameCount{0};
+  uint32_t _ttsBufferedMs{0};
+  bool _ttsPlaybackPrimed{false};
+  bool _ttsStreamEnded{false};
+  String _ttsStreamRequestId{""};
+  String _ttsStreamId{""};
+  int _ttsExpectedChunkIndex{0};
+  uint32_t _ttsSampleRateHz{FW_AUDIO_SAMPLE_RATE};
+
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
   void setConversationState(ConversationState next, const char* reason);
@@ -142,6 +169,15 @@ class StackchanSession {
   void handleError(const String& payloadJson);
   void clearIncomingTTSBuffer();
   bool appendIncomingTTSChunk(const String& requestId, int chunkIndex, int totalChunks, const String& audioBase64);
+  void clearTTSFrameQueue();
+  bool enqueueTTSFrame(const String& requestId,
+                       const String& streamId,
+                       int chunkIndex,
+                       int frameDurationMs,
+                       int samplesPerChunk,
+                       const String& audioBase64);
+  bool dequeueTTSPlaybackBatch(uint16_t targetDurationMs, uint8_t** outBytes, size_t* outByteLen, uint16_t* outDurationMs);
+  void processTTSPlaybackQueue();
 };
 
 }  // namespace App

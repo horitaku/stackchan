@@ -91,6 +91,7 @@ void StackchanSession::loop() {
 
   // TTS 再生状態を更新します。
   _ttsPlayer.update();
+  processTTSPlaybackQueue();
   updateAvatarFace();
 
   // speaking -> idle 遷移を再生状態から検知します。
@@ -254,6 +255,8 @@ void StackchanSession::onWSConnected() {
 void StackchanSession::onWSDisconnected() {
   setState(SessionState::ConnectingWS);
   _ttsPlayer.stop();
+  clearTTSFrameQueue();
+  clearIncomingTTSBuffer();
   // _ws の指数バックオフ再接続が自動で動作します
 }
 
@@ -402,9 +405,29 @@ void StackchanSession::handleTTSChunk(const String& payloadJson) {
   deserializeJson(payload, payloadJson);
 
   const char* requestId = payload["request_id"] | "";
+  const char* streamId = payload["stream_id"] | "";
   int chunkIndex = payload["chunk_index"] | -1;
+  int frameDurationMs = payload["frame_duration_ms"] | 0;
+  int samplesPerChunk = payload["samples_per_chunk"] | 0;
   int totalChunks = payload["total_chunks"] | 0;
   const char* audioBase64 = payload["audio_base64"] | "";
+
+  // P8-15: v1.1 形式（stream_id + frame_duration_ms + samples_per_chunk）を優先処理します。
+  if (String(streamId).length() > 0 && frameDurationMs > 0 && samplesPerChunk > 0) {
+    if (!enqueueTTSFrame(String(requestId), String(streamId), chunkIndex, frameDurationMs, samplesPerChunk, String(audioBase64))) {
+      Serial.printf("[TTS] request_id=%s stream_id=%s frame enqueue failed idx=%d\n",
+        requestId, streamId, chunkIndex);
+      return;
+    }
+
+    Serial.printf("[TTS] request_id=%s stream_id=%s frame queued idx=%d buffered_ms=%u frames=%u\n",
+      requestId,
+      streamId,
+      chunkIndex,
+      static_cast<unsigned>(_ttsBufferedMs),
+      static_cast<unsigned>(_ttsFrameCount));
+    return;
+  }
 
   if (!appendIncomingTTSChunk(String(requestId), chunkIndex, totalChunks, String(audioBase64))) {
     Serial.printf("[TTS] request_id=%s chunk append failed idx=%d total=%d\n",
@@ -431,6 +454,20 @@ void StackchanSession::handleTTSEnd(const String& payloadJson) {
   int totalChunks        = payload["total_chunks"] | 0;
 
   _currentRequestId = String(requestId);
+
+  // P8-15: フレームキュー方式（v1.1）では tts.end をストリーム終端として扱います。
+  if (_ttsStreamRequestId == String(requestId)) {
+    if (sampleRateHz > 0) {
+      _ttsSampleRateHz = static_cast<uint32_t>(sampleRateHz);
+    }
+    _ttsStreamEnded = true;
+    Serial.printf("[TTS] request_id=%s stream playback pending buffered_ms=%u frames=%u sample_rate_hz=%u\n",
+      requestId,
+      static_cast<unsigned>(_ttsBufferedMs),
+      static_cast<unsigned>(_ttsFrameCount),
+      static_cast<unsigned>(_ttsSampleRateHz));
+    return;
+  }
 
   // Phase 6 最小実装: PCM 音声を想定して再生します（opus は未対応）。
   if (strcmp(codec, "pcm") != 0) {
@@ -538,6 +575,7 @@ void StackchanSession::handleConversationCancel(const String& payloadJson) {
   Serial.printf("[Interrupt] conversation.cancel request_id=%s reason=%s\n", requestId, reason);
   setConversationState(ConversationState::Interrupted, "conversation.cancel received");
   _ttsPlayer.stop();
+  clearTTSFrameQueue();
   clearIncomingTTSBuffer();
   setConversationState(ConversationState::Idle, "conversation.cancel applied");
 }
@@ -552,6 +590,7 @@ void StackchanSession::handleTTSStop(const String& payloadJson) {
   Serial.printf("[Interrupt] tts.stop request_id=%s reason=%s\n", requestId, reason);
   setConversationState(ConversationState::Interrupted, "tts.stop received");
   _ttsPlayer.stop();
+  clearTTSFrameQueue();
   clearIncomingTTSBuffer();
   setConversationState(ConversationState::Idle, "tts.stop applied");
 }
@@ -565,6 +604,7 @@ void StackchanSession::handleAudioStreamAbort(const String& payloadJson) {
 
   Serial.printf("[Interrupt] audio.stream_abort stream_id=%s reason=%s\n", streamId, reason);
   setConversationState(ConversationState::Interrupted, "audio.stream_abort received");
+  clearTTSFrameQueue();
   clearIncomingTTSBuffer();
   setConversationState(ConversationState::Idle, "audio.stream_abort applied");
 }
@@ -716,6 +756,250 @@ bool StackchanSession::appendIncomingTTSChunk(const String& requestId, int chunk
 
   free(decoded);
   return true;
+}
+
+void StackchanSession::clearTTSFrameQueue() {
+  for (size_t i = 0; i < kTTSFrameQueueCapacity; i++) {
+    if (_ttsFrameQueue[i].bytes != nullptr) {
+      free(_ttsFrameQueue[i].bytes);
+      _ttsFrameQueue[i].bytes = nullptr;
+    }
+    _ttsFrameQueue[i].byteLen = 0;
+    _ttsFrameQueue[i].frameDurationMs = 0;
+    _ttsFrameQueue[i].samplesPerChunk = 0;
+    _ttsFrameQueue[i].chunkIndex = 0;
+  }
+
+  _ttsFrameHead = 0;
+  _ttsFrameTail = 0;
+  _ttsFrameCount = 0;
+  _ttsBufferedMs = 0;
+  _ttsPlaybackPrimed = false;
+  _ttsStreamEnded = false;
+  _ttsExpectedChunkIndex = 0;
+  _ttsStreamRequestId = "";
+  _ttsStreamId = "";
+}
+
+bool StackchanSession::enqueueTTSFrame(const String& requestId,
+                                       const String& streamId,
+                                       int chunkIndex,
+                                       int frameDurationMs,
+                                       int samplesPerChunk,
+                                       const String& audioBase64) {
+  if (requestId.length() == 0 ||
+      streamId.length() == 0 ||
+      chunkIndex < 0 ||
+      frameDurationMs <= 0 ||
+      samplesPerChunk <= 0 ||
+      audioBase64.length() == 0) {
+    return false;
+  }
+
+  if (_ttsStreamRequestId != requestId || _ttsStreamId != streamId) {
+    if (_ttsPlayer.state() == Audio::PlaybackState::Playing ||
+        _ttsPlayer.state() == Audio::PlaybackState::Buffering) {
+      _ttsPlayer.stop();
+    }
+    clearTTSFrameQueue();
+    _ttsStreamRequestId = requestId;
+    _ttsStreamId = streamId;
+    _ttsExpectedChunkIndex = 0;
+  }
+
+  if (chunkIndex != _ttsExpectedChunkIndex) {
+    Serial.printf("[TTS] request_id=%s stream_id=%s unexpected frame idx=%d expected=%d\n",
+      requestId.c_str(),
+      streamId.c_str(),
+      chunkIndex,
+      _ttsExpectedChunkIndex);
+    clearTTSFrameQueue();
+    return false;
+  }
+
+  uint8_t* decoded = nullptr;
+  size_t decodedLen = 0;
+  if (!decodeBase64(audioBase64, &decoded, &decodedLen)) {
+    return false;
+  }
+
+  if (_ttsFrameCount >= kTTSFrameQueueCapacity) {
+    Serial.printf("[TTS] request_id=%s stream_id=%s frame queue overflow (capacity=%u)\n",
+      requestId.c_str(),
+      streamId.c_str(),
+      static_cast<unsigned>(kTTSFrameQueueCapacity));
+    free(decoded);
+    _ttsExpectedChunkIndex++;
+    return true;
+  }
+
+  // high-water 超過を避けるため、末尾フレームを受け入れる前に抑制します。
+  const uint32_t nextBufferedMs = _ttsBufferedMs + static_cast<uint32_t>(frameDurationMs);
+  if (nextBufferedMs > kTTSHighWaterMs) {
+    Serial.printf("[TTS] request_id=%s stream_id=%s high-water drop idx=%d buffered_ms=%u limit_ms=%u\n",
+      requestId.c_str(),
+      streamId.c_str(),
+      chunkIndex,
+      static_cast<unsigned>(_ttsBufferedMs),
+      static_cast<unsigned>(kTTSHighWaterMs));
+    free(decoded);
+    _ttsExpectedChunkIndex++;
+    return true;
+  }
+
+  TTSFrameSlot& slot = _ttsFrameQueue[_ttsFrameTail];
+  slot.bytes = decoded;
+  slot.byteLen = decodedLen;
+  slot.frameDurationMs = static_cast<uint16_t>(frameDurationMs);
+  slot.samplesPerChunk = static_cast<uint16_t>(samplesPerChunk);
+  slot.chunkIndex = chunkIndex;
+
+  _ttsFrameTail = (_ttsFrameTail + 1) % kTTSFrameQueueCapacity;
+  _ttsFrameCount++;
+  _ttsBufferedMs += static_cast<uint32_t>(frameDurationMs);
+  _ttsExpectedChunkIndex++;
+  return true;
+}
+
+bool StackchanSession::dequeueTTSPlaybackBatch(uint16_t targetDurationMs,
+                                               uint8_t** outBytes,
+                                               size_t* outByteLen,
+                                               uint16_t* outDurationMs) {
+  if (outBytes == nullptr || outByteLen == nullptr || outDurationMs == nullptr) {
+    return false;
+  }
+  *outBytes = nullptr;
+  *outByteLen = 0;
+  *outDurationMs = 0;
+
+  if (_ttsFrameCount == 0) {
+    return false;
+  }
+
+  const uint16_t durationLimit = targetDurationMs > 0 ? targetDurationMs : kTTSPlaybackBatchMs;
+
+  size_t totalBytes = 0;
+  uint16_t totalDuration = 0;
+  size_t framesToPop = 0;
+  size_t cursor = _ttsFrameHead;
+  size_t available = _ttsFrameCount;
+
+  while (available > 0) {
+    const TTSFrameSlot& slot = _ttsFrameQueue[cursor];
+    totalBytes += slot.byteLen;
+    totalDuration = static_cast<uint16_t>(totalDuration + slot.frameDurationMs);
+    framesToPop++;
+
+    cursor = (cursor + 1) % kTTSFrameQueueCapacity;
+    available--;
+
+    if (totalDuration >= durationLimit) {
+      break;
+    }
+  }
+
+  if (framesToPop == 0 || totalBytes == 0) {
+    return false;
+  }
+
+  uint8_t* merged = static_cast<uint8_t*>(malloc(totalBytes));
+  if (merged == nullptr) {
+    return false;
+  }
+
+  size_t offset = 0;
+  for (size_t i = 0; i < framesToPop; i++) {
+    TTSFrameSlot& slot = _ttsFrameQueue[_ttsFrameHead];
+    memcpy(merged + offset, slot.bytes, slot.byteLen);
+    offset += slot.byteLen;
+
+    if (_ttsBufferedMs >= slot.frameDurationMs) {
+      _ttsBufferedMs -= slot.frameDurationMs;
+    } else {
+      _ttsBufferedMs = 0;
+    }
+
+    if (slot.bytes != nullptr) {
+      free(slot.bytes);
+      slot.bytes = nullptr;
+    }
+    slot.byteLen = 0;
+    slot.frameDurationMs = 0;
+    slot.samplesPerChunk = 0;
+    slot.chunkIndex = 0;
+
+    _ttsFrameHead = (_ttsFrameHead + 1) % kTTSFrameQueueCapacity;
+    _ttsFrameCount--;
+  }
+
+  *outBytes = merged;
+  *outByteLen = totalBytes;
+  *outDurationMs = totalDuration;
+  return true;
+}
+
+void StackchanSession::processTTSPlaybackQueue() {
+  if (_ttsFrameCount == 0) {
+    if (_ttsStreamEnded && _ttsPlayer.state() == Audio::PlaybackState::Idle) {
+      clearTTSFrameQueue();
+      if (_conversationState == ConversationState::Speaking) {
+        setConversationState(ConversationState::Idle, "tts stream drained");
+      }
+    }
+    return;
+  }
+
+  if (_ttsPlayer.state() != Audio::PlaybackState::Idle) {
+    return;
+  }
+
+  // 事前バッファが規定値に到達するまでは再生を開始しません。
+  if (!_ttsPlaybackPrimed) {
+    if (_ttsBufferedMs < kTTSPrebufferStartMs && !_ttsStreamEnded) {
+      return;
+    }
+    _ttsPlaybackPrimed = true;
+    Serial.printf("[TTS] prebuffer ready request_id=%s buffered_ms=%u threshold_ms=%u\n",
+      _ttsStreamRequestId.c_str(),
+      static_cast<unsigned>(_ttsBufferedMs),
+      static_cast<unsigned>(kTTSPrebufferStartMs));
+  }
+
+  if (_ttsBufferedMs < kTTSLowWaterMs && !_ttsStreamEnded) {
+    Serial.printf("[TTS] low-water request_id=%s buffered_ms=%u threshold_ms=%u\n",
+      _ttsStreamRequestId.c_str(),
+      static_cast<unsigned>(_ttsBufferedMs),
+      static_cast<unsigned>(kTTSLowWaterMs));
+  }
+
+  uint8_t* mergedBytes = nullptr;
+  size_t mergedLen = 0;
+  uint16_t mergedDurationMs = 0;
+  if (!dequeueTTSPlaybackBatch(kTTSPlaybackBatchMs, &mergedBytes, &mergedLen, &mergedDurationMs)) {
+    return;
+  }
+
+  const bool started = _ttsPlayer.playPCM16(mergedBytes, mergedLen, _ttsSampleRateHz, true);
+  free(mergedBytes);
+
+  if (!started) {
+    Serial.printf("[TTS] request_id=%s playback batch start failed bytes=%u\n",
+      _ttsStreamRequestId.c_str(),
+      static_cast<unsigned>(mergedLen));
+    clearTTSFrameQueue();
+    return;
+  }
+
+  if (_conversationState != ConversationState::Speaking) {
+    setConversationState(ConversationState::Speaking, "tts stream playback started");
+  }
+
+  Serial.printf("[TTS] request_id=%s playback batch started duration_ms=%u bytes=%u buffered_ms=%u frames_left=%u\n",
+    _ttsStreamRequestId.c_str(),
+    static_cast<unsigned>(mergedDurationMs),
+    static_cast<unsigned>(mergedLen),
+    static_cast<unsigned>(_ttsBufferedMs),
+    static_cast<unsigned>(_ttsFrameCount));
 }
 
 }  // namespace App

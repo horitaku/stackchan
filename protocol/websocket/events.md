@@ -155,13 +155,20 @@
 ### 5.3 tts.chunk
 
 - Direction: server -> firmware
-- Purpose: TTS 音声データ本体を小さなチャンクへ分割して通知する
+- Purpose: TTS 音声データ本体を音声フレーム単位で通知する
 - JSON Schema: protocol/websocket/schemas/tts.chunk.schema.json
 - Payload fields:
   - request_id: string (required)
+  - stream_id: string (required, v1.1)
   - chunk_index: integer (required, minimum: 0)
-  - total_chunks: integer (required, minimum: 1)
-  - audio_base64: string (required) — Base64 エンコード済みの音声チャンク
+  - frame_duration_ms: integer (required, v1.1, enum: 10, 20, 40, 60)
+  - samples_per_chunk: integer (required, v1.1, minimum: 1)
+  - sent_at: string (optional, v1.1, RFC3339)
+  - playout_ts: string (optional, v1.1, RFC3339)
+  - audio_base64: string (required) — Base64 エンコード済みの音声フレーム
+  - total_chunks: integer (optional, minimum: 1) — v1.0 互換。v1.1 では非推奨
+- Normative note: v1.1 では `sent_at` または `playout_ts` の少なくとも一方を必須とする
+- Compatibility note: schema は `version=1.0`（旧 payload）と `version=1.1`（新 payload）を併存サポートする
 
 ### 5.4 tts.end
 

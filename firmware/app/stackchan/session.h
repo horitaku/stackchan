@@ -38,6 +38,18 @@ enum class SessionState {
 };
 
 /**
+ * @brief 会話体験の状態を表します。
+ */
+enum class ConversationState {
+  Idle,
+  Listening,
+  Thinking,
+  Speaking,
+  Interrupted,
+  Error,
+};
+
+/**
  * @brief Stackchan セッション管理クラス。
  * setup() で begin()、loop() で loop() を呼び出してください。
  */
@@ -56,6 +68,7 @@ class StackchanSession {
   void loop();
 
   SessionState state() const { return _state; }
+  ConversationState conversationState() const { return _conversationState; }
 
   /**
    * @brief テスト音声ストリームを送信します（Active 状態のみ有効）。
@@ -73,6 +86,8 @@ class StackchanSession {
 
   SessionState  _state{SessionState::Idle};
   String        _sessionId{""};
+  ConversationState _conversationState{ConversationState::Idle};
+  Audio::PlaybackState _lastPlaybackState{Audio::PlaybackState::Idle};
 
   // heartbeat 管理
   unsigned long _heartbeatIntervalMs{FW_HEARTBEAT_INTERVAL_MS};
@@ -99,6 +114,8 @@ class StackchanSession {
 
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
+  void setConversationState(ConversationState next, const char* reason);
+  const char* conversationStateName(ConversationState state) const;
 
   // WebSocket コールバック
   void onWSConnected();
@@ -119,6 +136,9 @@ class StackchanSession {
   void handleTTSEnd(const String& payloadJson);
   void handleAvatarExpression(const String& payloadJson);
   void handleMotionPlay(const String& payloadJson);
+  void handleConversationCancel(const String& payloadJson);
+  void handleTTSStop(const String& payloadJson);
+  void handleAudioStreamAbort(const String& payloadJson);
   void handleError(const String& payloadJson);
   void clearIncomingTTSBuffer();
   bool appendIncomingTTSChunk(const String& requestId, int chunkIndex, int totalChunks, const String& audioBase64);

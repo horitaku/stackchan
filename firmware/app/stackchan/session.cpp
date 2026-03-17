@@ -23,6 +23,7 @@ StackchanSession::StackchanSession()
 
 void StackchanSession::begin() {
   Serial.println("[Session] begin()");
+  setConversationState(ConversationState::Idle, "boot completed");
 
   _mic.begin();
   _ttsPlayer.begin();
@@ -92,6 +93,15 @@ void StackchanSession::loop() {
   _ttsPlayer.update();
   updateAvatarFace();
 
+  // speaking -> idle 遷移を再生状態から検知します。
+  const Audio::PlaybackState nowPlaybackState = _ttsPlayer.state();
+  if (_lastPlaybackState == Audio::PlaybackState::Playing &&
+      nowPlaybackState == Audio::PlaybackState::Idle &&
+      _conversationState == ConversationState::Speaking) {
+    setConversationState(ConversationState::Idle, "tts playback finished");
+  }
+  _lastPlaybackState = nowPlaybackState;
+
   // Active 状態でのみ heartbeat を定期送信します
   if (_state == SessionState::Active) {
     if (millis() - _lastHeartbeatMs >= _heartbeatIntervalMs) {
@@ -113,6 +123,7 @@ void StackchanSession::sendAudioStream(int frameCount) {
 
   // UUID v4 で stream_id を生成します
   String streamId = Protocol::generateUUIDv4();
+  setConversationState(ConversationState::Listening, "audio capture started");
   Serial.printf("[AudioSend] Start: stream_id=%s frames=%d\n",
     streamId.c_str(), frameCount);
 
@@ -184,6 +195,7 @@ void StackchanSession::sendAudioStream(int frameCount) {
   if (_ws.sendText(endEnv)) {
     Serial.printf("[AudioSend] audio.end sent (stream_id=%s final_chunk_index=%d)\n",
       streamId.c_str(), frameCount - 1);
+    setConversationState(ConversationState::Thinking, "audio.end sent");
   }
 }
 
@@ -195,6 +207,36 @@ void StackchanSession::setState(SessionState next) {
   if (_state == next) return;
   Serial.printf("[Session] State: %d → %d\n", (int)_state, (int)next);
   _state = next;
+}
+
+void StackchanSession::setConversationState(ConversationState next, const char* reason) {
+  if (_conversationState == next) {
+    return;
+  }
+  Serial.printf("[Conversation] State: %s -> %s reason=%s\n",
+                conversationStateName(_conversationState),
+                conversationStateName(next),
+                reason == nullptr ? "(none)" : reason);
+  _conversationState = next;
+}
+
+const char* StackchanSession::conversationStateName(ConversationState state) const {
+  switch (state) {
+    case ConversationState::Idle:
+      return "idle";
+    case ConversationState::Listening:
+      return "listening";
+    case ConversationState::Thinking:
+      return "thinking";
+    case ConversationState::Speaking:
+      return "speaking";
+    case ConversationState::Interrupted:
+      return "interrupted";
+    case ConversationState::Error:
+      return "error";
+    default:
+      return "unknown";
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -288,6 +330,12 @@ void StackchanSession::onTextMessage(const String& msg) {
     handleAvatarExpression(payloadStr);
   } else if (strcmp(type, Protocol::EventType::MOTION_PLAY) == 0) {
     handleMotionPlay(payloadStr);
+  } else if (strcmp(type, Protocol::EventType::CONVERSATION_CANCEL) == 0) {
+    handleConversationCancel(payloadStr);
+  } else if (strcmp(type, Protocol::EventType::TTS_STOP) == 0) {
+    handleTTSStop(payloadStr);
+  } else if (strcmp(type, Protocol::EventType::AUDIO_STREAM_ABORT) == 0) {
+    handleAudioStreamAbort(payloadStr);
   } else if (strcmp(type, Protocol::EventType::ERROR_EVENT) == 0) {
     handleError(payloadStr);
   } else {
@@ -320,6 +368,7 @@ void StackchanSession::handleWelcome(const String& payloadJson,
   _heartbeatIntervalMs = payload["heartbeat_interval_ms"] | FW_HEARTBEAT_INTERVAL_MS;
 
   setState(SessionState::Active);
+  setConversationState(ConversationState::Idle, "session welcome accepted");
   _lastHeartbeatMs = millis();
   if (_avatarReady) {
     _avatar.setSpeechText("Ready");
@@ -345,6 +394,7 @@ void StackchanSession::handleSTTFinal(const String& payloadJson) {
     Serial.printf("[STT] request_id=%s transcript=\"%s\"\n",
       requestId, transcript);
   }
+  setConversationState(ConversationState::Thinking, "stt.final received");
 }
 
 void StackchanSession::handleTTSChunk(const String& payloadJson) {
@@ -427,6 +477,8 @@ void StackchanSession::handleTTSEnd(const String& payloadJson) {
     return;
   }
 
+  setConversationState(ConversationState::Speaking, "tts.end playback started");
+
   Serial.printf("[TTS] request_id=%s playback started codec=%s duration_ms=%d sample_rate_hz=%d decoded_bytes=%u start_latency_ms=%u chunks=%d\n",
     requestId,
     codec,
@@ -476,6 +528,47 @@ void StackchanSession::handleMotionPlay(const String& payloadJson) {
   Serial.printf("[Avatar] motion=%s\n", _motion.c_str());
 }
 
+void StackchanSession::handleConversationCancel(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* requestId = payload["request_id"] | "";
+  const char* reason = payload["reason"] | "cancelled";
+
+  Serial.printf("[Interrupt] conversation.cancel request_id=%s reason=%s\n", requestId, reason);
+  setConversationState(ConversationState::Interrupted, "conversation.cancel received");
+  _ttsPlayer.stop();
+  clearIncomingTTSBuffer();
+  setConversationState(ConversationState::Idle, "conversation.cancel applied");
+}
+
+void StackchanSession::handleTTSStop(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* requestId = payload["request_id"] | "";
+  const char* reason = payload["reason"] | "stopped";
+
+  Serial.printf("[Interrupt] tts.stop request_id=%s reason=%s\n", requestId, reason);
+  setConversationState(ConversationState::Interrupted, "tts.stop received");
+  _ttsPlayer.stop();
+  clearIncomingTTSBuffer();
+  setConversationState(ConversationState::Idle, "tts.stop applied");
+}
+
+void StackchanSession::handleAudioStreamAbort(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* streamId = payload["stream_id"] | "";
+  const char* reason = payload["reason"] | "aborted";
+
+  Serial.printf("[Interrupt] audio.stream_abort stream_id=%s reason=%s\n", streamId, reason);
+  setConversationState(ConversationState::Interrupted, "audio.stream_abort received");
+  clearIncomingTTSBuffer();
+  setConversationState(ConversationState::Idle, "audio.stream_abort applied");
+}
+
 void StackchanSession::handleError(const String& payloadJson) {
   JsonDocument payload;
   deserializeJson(payload, payloadJson);
@@ -486,6 +579,10 @@ void StackchanSession::handleError(const String& payloadJson) {
 
   Serial.printf("[Session] ERROR code=%s message=%s retryable=%d\n",
     code, message, (int)retry);
+
+  if (!retry) {
+    setConversationState(ConversationState::Error, "non-retryable error event");
+  }
 }
 
 void StackchanSession::updateAvatarFace() {

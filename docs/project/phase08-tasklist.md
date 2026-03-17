@@ -17,7 +17,7 @@
 | P8-06 | 障害復旧ランブックを整備する | 接続断、provider 遅延、設定不整合の復旧手順 | 中 | 運用時 MTTR を短縮するため | Done |
 | P8-07 | firmware で M5Stack-Avatar の顔表示を先行実装する | 初期顔描画、表情切替 API、描画ループ統合、手動確認手順 | 高 | デバイス体験価値を早期に確認し、以降の音声同期実装の土台にするため | Done |
 | P8-08 | interrupt 系イベントを protocol へ正式追加する | `conversation.cancel` / `tts.stop` / `audio.stream_abort` の schema・example・互換性メモ | 高 | 割り込み制御を後付けにすると firmware/server 双方の手戻りが大きいため | Done |
-| P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Planned |
+| P8-09 | firmware に最小 conversation 状態遷移を実装する | `idle/listening/thinking/speaking/interrupted/error` の状態管理、遷移ログ、手動確認手順 | 高 | 体験品質とランタイム境界を architecture 定義と一致させるため | Done |
 | P8-10 | Opus 経路の計測項目を runtime metrics へ追加する | first frame latency、cadence jitter、E2E latency の収集/公開/API 反映 | 高 | 低遅延最適化の判断を定量化し、phase8 受け入れ判定を明確化するため | Planned |
 | P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備する | `voicevox` サービス定義、server との接続設定、起動確認手順、トラブルシュートメモ | 高 | TTS 実機連携を早期検証し、後続の音声品質評価と遅延計測の前提を整えるため | Done |
 | P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加する | テスト実行 UI、入力テキスト指定、再生/ダウンロード確認、失敗時エラー表示、手順書 | 高 | Stackchan 非接続でも TTS の健全性を先に切り分け可能にするため | Done |
@@ -205,6 +205,27 @@
   - `protocol/websocket/events.md` に定義、error semantics、互換性メモを追記
   - `protocol/websocket/validation-checklist.md` にイベント別検証項目を追記
   - `protocol/versioning.md` に phase8 追加の運用方針を追記
+
+## 2.14 P8-09 firmware conversation 状態遷移メモ（2026-03-18）
+
+- `firmware/app/stackchan/session.h` / `session.cpp` に conversation state を追加しました。
+  - `idle` / `listening` / `thinking` / `speaking` / `interrupted` / `error`
+- 遷移ログを追加しました。
+  - ログ形式: `[Conversation] State: <prev> -> <next> reason=<reason>`
+- 最小遷移の実装ポイント:
+  - `idle -> listening`: `sendAudioStream()` 開始時
+  - `listening -> thinking`: `audio.end` 送信成功時
+  - `thinking -> speaking`: `tts.end` 受信後、再生開始成功時
+  - `speaking -> idle`: 再生完了を検知した時点
+  - `* -> interrupted -> idle`: `conversation.cancel` / `tts.stop` / `audio.stream_abort` 受信時
+  - `* -> error`: `error` イベントで `retryable=false` を受信した時
+  - `error -> idle`: `session.welcome` 再受信で接続復帰した時
+- 手動確認手順:
+  1. firmware を起動して `session.welcome` まで接続し、`idle` ログを確認する
+  2. 画面タップで `sendAudioStream()` を実行し、`listening -> thinking` ログを確認する
+  3. `tts.end` 応答で `thinking -> speaking`、再生終了で `speaking -> idle` を確認する
+  4. `conversation.cancel` / `tts.stop` / `audio.stream_abort` を送信し、`interrupted -> idle` を確認する
+  5. `retryable=false` の `error` を送信し `error` へ遷移、再接続後 `idle` 復帰を確認する
 
 ## 3. フェーズ 7 からの前提条件
 

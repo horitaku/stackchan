@@ -163,6 +163,7 @@
   - chunk_index: integer (required, minimum: 0)
   - frame_duration_ms: integer (required, v1.1, enum: 10, 20, 40, 60)
   - samples_per_chunk: integer (required, v1.1, minimum: 1)
+  - codec: string (optional, v1.1, enum: opus, pcm) — 未指定時は pcm 扱い
   - sent_at: string (optional, v1.1, RFC3339)
   - playout_ts: string (optional, v1.1, RFC3339)
   - audio_base64: string (required) — Base64 エンコード済みの音声フレーム

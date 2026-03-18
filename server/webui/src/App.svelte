@@ -210,6 +210,10 @@
         <div><dt>llm</dt><dd>{fmtMs(snapshot.pipeline?.llm_latency_ms || 0)}</dd></div>
         <div><dt>tts</dt><dd>{fmtMs(snapshot.pipeline?.tts_latency_ms || 0)}</dd></div>
         <div><dt>total</dt><dd>{fmtMs(snapshot.pipeline?.total_latency_ms || 0)}</dd></div>
+        <div><dt>TTS Buffer Status</dt><dd>{snapshot.pipeline?.tts_watermark_status || "-"}</dd></div>
+        <div><dt>TTS Buffered</dt><dd>{fmtMs(snapshot.pipeline?.tts_buffered_ms || 0)}</dd></div>
+        <div><dt>Low Water Events</dt><dd>{snapshot.pipeline?.tts_low_water_count ?? 0}</dd></div>
+        <div><dt>High Water Drops</dt><dd>{snapshot.pipeline?.tts_high_water_drop_count ?? 0}</dd></div>
       </dl>
     </article>
 

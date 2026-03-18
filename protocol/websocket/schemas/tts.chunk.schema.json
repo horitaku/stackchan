@@ -87,6 +87,11 @@
           "minimum": 1,
           "description": "1 チャンクに含まれるサンプル数（1 チャンネル基準）"
         },
+        "codec": {
+          "type": "string",
+          "enum": ["pcm", "opus"],
+          "description": "チャンクの音声コーデック。未指定時は pcm 扱い"
+        },
         "sent_at": {
           "type": "string",
           "format": "date-time",

@@ -18,6 +18,7 @@ services:
       OPENAI_MODEL_CHAT: ${OPENAI_MODEL_CHAT:-gpt-4o-mini}
       OPENAI_MODEL_STT: ${OPENAI_MODEL_STT:-gpt-4o-mini-transcribe}
       VOICEVOX_BASE_URL: ${VOICEVOX_BASE_URL:-http://voicevox:50021}
+      VOICEVOX_HTTP_TIMEOUT_SEC: ${VOICEVOX_HTTP_TIMEOUT_SEC:-45}
       DATABASE_URL: ${DATABASE_URL:-postgres://stackchan:change-me@db:5432/stackchan?sslmode=disable}
       SESSION_SECRET: ${SESSION_SECRET:-replace-with-long-random-secret}
       WS_READ_TIMEOUT: ${WS_READ_TIMEOUT:-45}

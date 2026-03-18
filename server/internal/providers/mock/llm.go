@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/horitaku/stackchan/server/internal/providers"
 )
@@ -24,5 +25,31 @@ func (m *LLM) Generate(_ context.Context, req providers.LLMRequest) (providers.L
 	if strings.Contains(req.Text, "internal_fail") {
 		return providers.LLMResult{}, providers.NewError(m.Name(), providers.CodeInternal, "internal llm error", false, nil)
 	}
-	return providers.LLMResult{ReplyText: "mock-reply:" + req.Text}, nil
+	reply := "mock-reply:" + req.Text
+	inputTokens := estimateTokens(req.SystemPrompt) + estimateTokens(req.Text)
+	for _, msg := range req.History {
+		inputTokens += estimateTokens(msg.Content)
+	}
+	outputTokens := estimateTokens(reply)
+	if inputTokens < 1 {
+		inputTokens = 1
+	}
+	if outputTokens < 1 {
+		outputTokens = 1
+	}
+	return providers.LLMResult{
+		ReplyText:        reply,
+		InputTokenCount:  inputTokens,
+		OutputTokenCount: outputTokens,
+		TotalTokenCount:  inputTokens + outputTokens,
+		EffectiveTurns:   len(req.History) / 2,
+	}, nil
+}
+
+func estimateTokens(text string) int {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return 0
+	}
+	return utf8.RuneCountInString(trimmed)/4 + 1
 }

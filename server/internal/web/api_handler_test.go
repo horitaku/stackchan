@@ -197,3 +197,70 @@ func TestRunVoicevoxStackchanTest_WSHandlerUnavailable(t *testing.T) {
 		t.Fatalf("expected 503, got %d", resp.StatusCode)
 	}
 }
+
+func TestLLMSettingsCRUD(t *testing.T) {
+	ts := newAPITestServer(t)
+
+	resp, err := http.Get(ts.URL + "/api/settings/llm")
+	if err != nil {
+		t.Fatalf("failed to get llm settings: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	body, _ := json.Marshal(map[string]any{"system_prompt": "あなたは丁寧な案内役です。"})
+	updatedResp, err := http.Post(ts.URL+"/api/settings/llm", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to update llm settings: %v", err)
+	}
+	defer updatedResp.Body.Close()
+	if updatedResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", updatedResp.StatusCode)
+	}
+
+	var updated map[string]any
+	if err := json.NewDecoder(updatedResp.Body).Decode(&updated); err != nil {
+		t.Fatalf("failed to decode update response: %v", err)
+	}
+	if updated["system_prompt"] == "" {
+		t.Fatal("expected system_prompt in update response")
+	}
+}
+
+func TestRunLLMUITest(t *testing.T) {
+	ts := newAPITestServer(t)
+	body, _ := json.Marshal(map[string]any{"text": "こんにちは"})
+
+	resp, err := http.Post(ts.URL+"/api/tests/llm/ui", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to run llm ui test: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if result["reply_text"] == "" {
+		t.Fatal("expected reply_text in response")
+	}
+}
+
+func TestRunLLMStackchanTest_WSUnavailable(t *testing.T) {
+	ts := newAPITestServer(t)
+	body, _ := json.Marshal(map[string]any{"text": "こんにちは", "speaker": 1})
+
+	resp, err := http.Post(ts.URL+"/api/tests/llm/stackchan", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to run llm stackchan test: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", resp.StatusCode)
+	}
+}

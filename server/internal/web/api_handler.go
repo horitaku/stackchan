@@ -57,6 +57,25 @@ type VoicevoxStackchanTestRequest struct {
 	ChunkVersion string `json:"chunk_version,omitempty"`
 }
 
+// LLMUITestRequest は WebUI から LLM 単体テストを実行する入力です。
+type LLMUITestRequest struct {
+	SessionID       string `json:"session_id,omitempty"`
+	Text            string `json:"text"`
+	PersonaOverride string `json:"persona_override,omitempty"`
+}
+
+// LLMStackchanTestRequest は LLM 応答を Stackchan へ送信する連携テスト入力です。
+type LLMStackchanTestRequest struct {
+	SessionID       string `json:"session_id,omitempty"`
+	Text            string `json:"text"`
+	PersonaOverride string `json:"persona_override,omitempty"`
+	Speaker         int    `json:"speaker"`
+	Motion          string `json:"motion,omitempty"`
+	Expression      string `json:"expression,omitempty"`
+	Codec           string `json:"codec,omitempty"`
+	ChunkVersion    string `json:"chunk_version,omitempty"`
+}
+
 type voicevoxSynthesisResult struct {
 	Text        string
 	Speaker     int
@@ -122,7 +141,11 @@ func (h *APIHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/runtime/metrics", h.GetRuntimeMetrics)
 	r.GET("/settings", h.GetSettings)
 	r.PUT("/settings", h.UpdateSettings)
+	r.GET("/settings/llm", h.GetLLMSettings)
+	r.POST("/settings/llm", h.UpdateLLMSettings)
 	r.POST("/tests/pipeline", h.RunPipelineTest)
+	r.POST("/tests/llm/ui", h.RunLLMUITest)
+	r.POST("/tests/llm/stackchan", h.RunLLMStackchanTest)
 	r.POST("/tests/voicevox/ui", h.RunVoicevoxUITest)
 	r.POST("/tests/voicevox/stackchan", h.RunVoicevoxStackchanTest)
 }
@@ -204,6 +227,26 @@ func (h *APIHandler) UpdateSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, updated)
 }
 
+// GetLLMSettings は現在の LLM 設定を返します。
+func (h *APIHandler) GetLLMSettings(c *gin.Context) {
+	c.JSON(http.StatusOK, h.settingsStore.GetLLMSettings())
+}
+
+// UpdateLLMSettings は LLM 設定を更新します。
+func (h *APIHandler) UpdateLLMSettings(c *gin.Context) {
+	var req LLMSettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	updated, err := h.settingsStore.UpdateLLMSettings(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, updated)
+}
+
 // RunPipelineTest は STT/LLM/TTS の最小疎通テストを実行します。
 func (h *APIHandler) RunPipelineTest(c *gin.Context) {
 	if h.orchestrator == nil {
@@ -244,20 +287,25 @@ func (h *APIHandler) RunPipelineTest(c *gin.Context) {
 
 	queueWaitMs := int64(0)
 	h.runtimeState.OnPipeline(result.RequestID, req.StreamID, queueWaitMs, result.STTLatencyMs, result.LLMLatencyMs, result.TTSLatencyMs, result.TotalLatencyMs)
+	h.runtimeState.OnLLMTokenMetrics(result.RequestID, result.LLMInputTokens, result.LLMOutputTokens, result.LLMTotalTokens, result.LLMEffectiveTurns)
 	h.runtimeState.OnPlaybackQueued(result.RequestID, time.Since(start).Milliseconds(), result.TTSDuration)
 	h.runtimeState.OnPlaybackSent()
 	h.runtimeState.OnPlaybackCompleted()
 
 	c.JSON(http.StatusOK, gin.H{
-		"request_id":       result.RequestID,
-		"transcript":       result.Transcript,
-		"reply_text":       result.ReplyText,
-		"provider_path":    result.ProviderPath,
-		"stt_latency_ms":   result.STTLatencyMs,
-		"llm_latency_ms":   result.LLMLatencyMs,
-		"tts_latency_ms":   result.TTSLatencyMs,
-		"total_latency_ms": result.TotalLatencyMs,
-		"duration_ms":      result.TTSDuration,
+		"request_id":                     result.RequestID,
+		"transcript":                     result.Transcript,
+		"reply_text":                     result.ReplyText,
+		"provider_path":                  result.ProviderPath,
+		"stt_latency_ms":                 result.STTLatencyMs,
+		"llm_latency_ms":                 result.LLMLatencyMs,
+		"llm_input_token_count":          result.LLMInputTokens,
+		"llm_output_token_count":         result.LLMOutputTokens,
+		"llm_total_token_count":          result.LLMTotalTokens,
+		"llm_effective_turns_in_context": result.LLMEffectiveTurns,
+		"tts_latency_ms":                 result.TTSLatencyMs,
+		"total_latency_ms":               result.TotalLatencyMs,
+		"duration_ms":                    result.TTSDuration,
 	})
 }
 
@@ -282,6 +330,149 @@ func (h *APIHandler) RunVoicevoxUITest(c *gin.Context) {
 		"audio_base64": result.AudioBase64,
 		"bytes":        result.Bytes,
 		"latency_ms":   result.LatencyMs,
+	})
+}
+
+// RunLLMUITest は WebUI から LLM 単体テストを実行します。
+func (h *APIHandler) RunLLMUITest(c *gin.Context) {
+	if h.orchestrator == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "orchestrator is not configured"})
+		return
+	}
+
+	var req LLMUITestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		text = "こんにちは、連携テストです。"
+	}
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		sessionID = "webui-llm-ui"
+	}
+	requestID := "llm-ui-" + uuid.NewString()
+
+	res, err := h.orchestrator.ProcessText(c.Request.Context(), sessionID, requestID, text, strings.TrimSpace(req.PersonaOverride))
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.runtimeState.OnPipeline(res.RequestID, "", 0, 0, res.LLMLatencyMs, res.TTSLatencyMs, res.TotalLatencyMs)
+	h.runtimeState.OnLLMTokenMetrics(res.RequestID, res.LLMInputTokens, res.LLMOutputTokens, res.LLMTotalTokens, res.LLMEffectiveTurns)
+
+	c.JSON(http.StatusOK, gin.H{
+		"request_id":                     res.RequestID,
+		"session_id":                     sessionID,
+		"input_text":                     text,
+		"reply_text":                     res.ReplyText,
+		"llm_latency_ms":                 res.LLMLatencyMs,
+		"llm_input_token_count":          res.LLMInputTokens,
+		"llm_output_token_count":         res.LLMOutputTokens,
+		"llm_total_token_count":          res.LLMTotalTokens,
+		"llm_effective_turns_in_context": res.LLMEffectiveTurns,
+	})
+}
+
+// RunLLMStackchanTest は LLM 応答を Voicevox で音声化して Stackchan へ送信します。
+func (h *APIHandler) RunLLMStackchanTest(c *gin.Context) {
+	if h.orchestrator == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "orchestrator is not configured"})
+		return
+	}
+	if h.wsHandler == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ws handler is not configured"})
+		return
+	}
+
+	var req LLMStackchanTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		text = "こんにちは、Stackchan 連携テストです。"
+	}
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		sessionID = "webui-llm-stackchan"
+	}
+	requestID := "llm-stackchan-" + uuid.NewString()
+
+	llmRes, err := h.orchestrator.ProcessText(c.Request.Context(), sessionID, requestID, text, strings.TrimSpace(req.PersonaOverride))
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	uiReq := VoicevoxUITestRequest{Text: llmRes.ReplyText, Speaker: req.Speaker}
+	voiceRes, err := h.synthesizeVoicevox(c.Request.Context(), uiReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	expression := strings.TrimSpace(req.Expression)
+	if expression == "" {
+		expression = "happy"
+	}
+	motion := strings.TrimSpace(req.Motion)
+	if motion == "" {
+		motion = "nod"
+	}
+	chunkVersion := strings.TrimSpace(req.ChunkVersion)
+	if chunkVersion == "" {
+		chunkVersion = "1.1"
+	}
+	codec := strings.TrimSpace(req.Codec)
+	if codec == "" {
+		codec = "opus"
+	}
+
+	activeSessionID, err := h.wsHandler.SendTTSTestToActive(
+		requestID,
+		voiceRes.AudioBase64,
+		0,
+		24000,
+		codec,
+		expression,
+		motion,
+		chunkVersion,
+	)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.runtimeState.OnPipeline(llmRes.RequestID, "", 0, 0, llmRes.LLMLatencyMs, llmRes.TTSLatencyMs, llmRes.TotalLatencyMs)
+	h.runtimeState.OnLLMTokenMetrics(llmRes.RequestID, llmRes.LLMInputTokens, llmRes.LLMOutputTokens, llmRes.LLMTotalTokens, llmRes.LLMEffectiveTurns)
+	h.runtimeState.OnPlaybackQueued(llmRes.RequestID, llmRes.TotalLatencyMs, llmRes.TTSDuration)
+	h.runtimeState.OnPlaybackSent()
+	h.runtimeState.OnPlaybackCompleted()
+
+	c.JSON(http.StatusOK, gin.H{
+		"request_id":                     requestID,
+		"session_id":                     sessionID,
+		"active_stackchan_session_id":    activeSessionID,
+		"input_text":                     text,
+		"reply_text":                     llmRes.ReplyText,
+		"voicevox_latency_ms":            voiceRes.LatencyMs,
+		"voicevox_bytes":                 voiceRes.Bytes,
+		"llm_latency_ms":                 llmRes.LLMLatencyMs,
+		"llm_input_token_count":          llmRes.LLMInputTokens,
+		"llm_output_token_count":         llmRes.LLMOutputTokens,
+		"llm_total_token_count":          llmRes.LLMTotalTokens,
+		"llm_effective_turns_in_context": llmRes.LLMEffectiveTurns,
+		"expression":                     expression,
+		"motion":                         motion,
+		"codec":                          codec,
+		"chunk_version":                  chunkVersion,
 	})
 }
 

@@ -7,6 +7,17 @@
   "payload": {
     "request_id": "stream-001",
     "transcript": "今日もよろしくお願いします",
-    "confidence": 0.97
+    "confidence": 0.97,
+    "alternatives": [
+      {
+        "transcript": "今日もよろしくお願いします。",
+        "confidence": 0.94
+      },
+      {
+        "transcript": "今日はよろしくお願いします",
+        "confidence": 0.71
+      }
+    ],
+    "context_hint": "daytime_greeting"
   }
 }

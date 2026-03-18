@@ -320,6 +320,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 					Msg("opus runtime metrics recorded")
 			}
 			h.runtimeState.OnPipeline(result.RequestID, payload.StreamID, queueWaitMs, result.STTLatencyMs, result.LLMLatencyMs, result.TTSLatencyMs, result.TotalLatencyMs)
+			h.runtimeState.OnLLMTokenMetrics(result.RequestID, result.LLMInputTokens, result.LLMOutputTokens, result.LLMTotalTokens, result.LLMEffectiveTurns)
 			h.runtimeState.OnPlaybackQueued(result.RequestID, result.TotalLatencyMs, result.TTSDuration)
 
 			// stt.final を送信します

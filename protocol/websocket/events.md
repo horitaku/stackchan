@@ -151,6 +151,8 @@
   - request_id: string (required) — フェーズ 4 では stream_id と同値
   - transcript: string (required)
   - confidence: number (optional, 0–1)
+  - alternatives: array (optional) — 候補テキスト一覧。各要素は `transcript`（required）+ `confidence`（optional）
+  - context_hint: string (optional) — LLM 側の曖昧性解消に使う補助情報
 - 将来候補: `stt.partial`（部分認識結果のストリーミング）
 
 ### 5.3 tts.chunk

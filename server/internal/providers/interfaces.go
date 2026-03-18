@@ -35,13 +35,26 @@ type STTResult struct {
 
 // LLMRequest は LLM へ渡す入力です。
 type LLMRequest struct {
-	SessionID string
-	Text      string
+	SessionID    string
+	RequestID    string
+	Text         string
+	SystemPrompt string
+	History      []LLMMessage
+}
+
+// LLMMessage は会話コンテキストに含めるメッセージです。
+type LLMMessage struct {
+	Role    string
+	Content string
 }
 
 // LLMResult は LLM の出力です。
 type LLMResult struct {
-	ReplyText string
+	ReplyText        string
+	InputTokenCount  int
+	OutputTokenCount int
+	TotalTokenCount  int
+	EffectiveTurns   int
 }
 
 // TTSRequest は TTS へ渡す入力です。

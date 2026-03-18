@@ -14,9 +14,11 @@ import (
 	"github.com/horitaku/stackchan/server/internal/logging"
 	"github.com/horitaku/stackchan/server/internal/providers"
 	"github.com/horitaku/stackchan/server/internal/providers/mock"
+	"github.com/horitaku/stackchan/server/internal/providers/openai"
 	"github.com/horitaku/stackchan/server/internal/session"
 	"github.com/horitaku/stackchan/server/internal/web"
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog"
 )
 
 func main() {
@@ -39,17 +41,46 @@ func main() {
 
 	// セッションマネージャーと WebSocket ハンドラを初期化します
 	manager := session.NewManager()
+	settingsStore := web.NewSettingsStore()
+	defer settingsStore.Close()
 	policy := providers.CallPolicy{
 		Timeout:     time.Duration(getEnvInt("PROVIDER_TIMEOUT_MS", 3000)) * time.Millisecond,
 		MaxAttempts: getEnvInt("PROVIDER_MAX_ATTEMPTS", 2),
 		BaseDelay:   time.Duration(getEnvInt("PROVIDER_RETRY_BASE_DELAY_MS", 100)) * time.Millisecond,
 	}
-	orchestrator := conversation.NewOrchestrator(&mock.STT{}, &mock.LLM{}, &mock.TTS{}, policy)
+
+	llmProvider := selectLLMProvider(log)
+	orchestrator := conversation.NewOrchestrator(&mock.STT{}, llmProvider, &mock.TTS{}, policy)
+	// LLM は STT/TTS よりも応答が遅いため、専用タイムアウトを設定します
+	llmTimeoutMs := getEnvInt("LLM_PROVIDER_TIMEOUT_MS", 30000)
+	orchestrator.SetLLMPolicy(providers.CallPolicy{
+		Timeout:     time.Duration(llmTimeoutMs) * time.Millisecond,
+		MaxAttempts: 1, // LLM はリトライが高コストのため 1 回のみ
+		BaseDelay:   policy.BaseDelay,
+	})
+	orchestrator.SetSystemPromptLoader(func(_ string) string {
+		return settingsStore.GetLLMSettings().SystemPrompt
+	})
+
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL != "" {
+		contextStore, err := session.NewUtteranceStore(databaseURL)
+		if err != nil {
+			log.Warn().Err(err).Msg("conversation context store is disabled")
+		} else {
+			defer contextStore.Close()
+			maxTurns := getEnvInt("LLM_CONTEXT_MAX_TURNS", 5)
+			maxTokens := getEnvInt("LLM_CONTEXT_MAX_TOKENS", 2000)
+			orchestrator.SetConversationContext(session.NewConversationContextManager(contextStore, maxTurns, maxTokens))
+			log.Info().Int("max_turns", maxTurns).Int("max_tokens", maxTokens).Msg("conversation context manager enabled")
+		}
+	}
+
 	wsHandler := web.NewWSHandler(manager, readTimeout, writeTimeout, orchestrator)
-	apiHandler := web.NewAPIHandler(wsHandler.RuntimeState(), web.NewSettingsStore(), orchestrator)
+	apiHandler := web.NewAPIHandler(wsHandler.RuntimeState(), settingsStore, orchestrator)
 	apiHandler.AttachWSHandler(wsHandler)
 
-	if databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL")); databaseURL != "" {
+	if databaseURL != "" {
 		metricsStore, err := web.NewRuntimeMetricsStore(databaseURL)
 		if err != nil {
 			log.Warn().Err(err).Msg("runtime metrics store is disabled")
@@ -88,6 +119,35 @@ func main() {
 	if err := r.Run(serverAddr); err != nil {
 		log.Fatal().Err(err).Msg("server failed to start")
 	}
+}
+
+func selectLLMProvider(log zerolog.Logger) providers.LLMProvider {
+	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	if apiKey == "" {
+		log.Warn().Msg("OPENAI_API_KEY is empty; fallback to mock LLM provider")
+		return &mock.LLM{}
+	}
+
+	provider, err := openai.NewLLM(openai.LLMConfig{
+		APIKey:      apiKey,
+		BaseURL:     strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
+		Model:       getEnv("OPENAI_MODEL_CHAT", "gpt-4o-mini"),
+		Temperature: getEnvFloat("OPENAI_TEMPERATURE", 0.7),
+	}, &http.Client{Timeout: resolveOpenAIHTTPTimeout()})
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to initialize OpenAI LLM provider; fallback to mock")
+		return &mock.LLM{}
+	}
+	log.Info().Str("provider", provider.Name()).Msg("OpenAI LLM provider enabled")
+	return provider
+}
+
+func resolveOpenAIHTTPTimeout() time.Duration {
+	sec := getEnvInt("OPENAI_HTTP_TIMEOUT_SEC", 45)
+	if sec <= 0 {
+		sec = 45
+	}
+	return time.Duration(sec) * time.Second
 }
 
 // corsMiddleware は CORS_ALLOWED_ORIGINS に基づいた簡易 CORS ミドルウェアです。
@@ -150,4 +210,16 @@ func getEnvSlice(key string, fallback []string) []string {
 		}
 	}
 	return result
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	s, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fallback
+	}
+	return v
 }

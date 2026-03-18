@@ -15,14 +15,14 @@
 
 | ID | タスク | 成果物 | 優先度 | 理由 | ステータス |
 | --- | --- | --- | --- | --- | --- |
-| P9-01 | OpenAI LLM Provider 実装 | `server/internal/providers/openai/llm.go`、Chat Completions クライアント、parameter 設計、error handling、test | 高 | mock-llm から実装への初期置き換え必須であり、後続タスクの前提 | Not Started |
-| P9-02 | Conversation Context 管理（会話履歴）の実装 | `server/internal/session/conversation_context.go`、直近 N turns 取得、token window 計算、DB 永続化連携 | 高 | LLM が context なしに毎回新規開始するのを改善し、自然な会話流れを実現 | Not Started |
-| P9-03 | LLM Persona / System Prompt UI 設定機能 | `server/internal/web/settings_store.go` 拡張、GET/POST `/api/settings/llm`、WebUI 設定パネル、値の永続化 | 高 | 運用者が persona を動的に切り替え可能にし、デバイス体験を柔軟化 | Not Started |
-| P9-04 | LLM レイテンシ・トークン計測と可視化 | runtime_metrics に token 関連項目追加、`GET /api/runtime/overview` 拡張、WebUI パネル | 中 | 会話品質とコスト（token 消費）を定量監視し、最適化判定を支援 | Not Started |
-| P9-05 | WebUI から OpenAI LLM を使った UI 単体テスト導線 | `POST /api/tests/llm/ui`、テキスト入力、persona 指定、応答テキスト表示、error 表示、手順書 | 高 | 実デバイス非接続でも LLM の健全性を先に切り分け可能に | Not Started |
-| P9-06 | WebUI から Stackchan 連携した LLM テスト導線 | `POST /api/tests/llm/stackchan`、STT → LLM → TTS のフルパイプ、結果確認、手順書 | 高 | 実デバイス連携時の会話フロー全体を早期に検証 | Not Started |
-| P9-07 | LLM 関連 ランブック追加 | `docs/runbooks/llm-config.md`（OpenAI設定、key、quota、error、token limit）、既存ランブック更新 | 中 | LLM 故障時の MTTR 短縮と運用ナレッジの定着 | Not Started |
-| P9-08 | protocol への stt.final payload 拡張（confidence / alternatives） | `protocol/websocket/schemas/stt.final.schema.json` 更新、context hint 用備忘フィールド | 低 | 将来的な LLM disambiguation support への下準備 | Not Started |
+| P9-01 | OpenAI LLM Provider 実装 | `server/internal/providers/openai/llm.go`、Chat Completions クライアント、parameter 設計、error handling、test | 高 | mock-llm から実装への初期置き換え必須であり、後続タスクの前提 | Done |
+| P9-02 | Conversation Context 管理（会話履歴）の実装 | `server/internal/session/conversation_context.go`、直近 N turns 取得、token window 計算、DB 永続化連携 | 高 | LLM が context なしに毎回新規開始するのを改善し、自然な会話流れを実現 | Done |
+| P9-03 | LLM Persona / System Prompt UI 設定機能 | `server/internal/web/settings_store.go` 拡張、GET/POST `/api/settings/llm`、WebUI 設定パネル、値の永続化 | 高 | 運用者が persona を動的に切り替え可能にし、デバイス体験を柔軟化 | Done |
+| P9-04 | LLM レイテンシ・トークン計測と可視化 | runtime_metrics に token 関連項目追加、`GET /api/runtime/overview` 拡張、WebUI パネル | 中 | 会話品質とコスト（token 消費）を定量監視し、最適化判定を支援 | Done |
+| P9-05 | WebUI から OpenAI LLM を使った UI 単体テスト導線 | `POST /api/tests/llm/ui`、テキスト入力、persona 指定、応答テキスト表示、error 表示、手順書 | 高 | 実デバイス非接続でも LLM の健全性を先に切り分け可能に | Done |
+| P9-06 | WebUI から Stackchan 連携した LLM テスト導線 | `POST /api/tests/llm/stackchan`、STT → LLM → TTS のフルパイプ、結果確認、手順書 | 高 | 実デバイス連携時の会話フロー全体を早期に検証 | Done |
+| P9-07 | LLM 関連 ランブック追加 | `docs/runbooks/llm-config.md`（OpenAI設定、key、quota、error、token limit）、既存ランブック更新 | 中 | LLM 故障時の MTTR 短縮と運用ナレッジの定着 | Done |
+| P9-08 | protocol への stt.final payload 拡張（confidence / alternatives） | `protocol/websocket/schemas/stt.final.schema.json` 更新、context hint 用備忘フィールド | 低 | 将来的な LLM disambiguation support への下準備 | Done |
 
 ## 2.1 実行方針（フェーズ 9）
 

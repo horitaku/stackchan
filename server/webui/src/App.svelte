@@ -23,6 +23,11 @@
     updated_at: "-"
   };
   let settingsMessage = "";
+  let llmSettings = {
+    system_prompt: "Stack-chan です。話しかけてくれてありがとう。",
+    updated_at: "-"
+  };
+  let llmSettingsMessage = "";
   let overviewMessage = "";
   let pipelineTestResult = "未実行";
   let voicevoxText = "こんにちは、Stackchan の Voicevox 単体テストです。";
@@ -35,6 +40,16 @@
   let stackchanMotion = "nod";
   let stackchanChunkVersion = "1.0";
   let stackchanResult = "未実行";
+  let llmUIText = "こんにちは、自己紹介して";
+  let llmUIPersona = "";
+  let llmUIResult = "未実行";
+  let llmStackchanText = "きょうの気分をひとことください";
+  let llmStackchanPersona = "";
+  let llmStackchanSpeaker = 1;
+  let llmStackchanExpression = "happy";
+  let llmStackchanMotion = "nod";
+  let llmStackchanChunkVersion = "1.1";
+  let llmStackchanResult = "未実行";
   let timerId;
 
   const fmtMs = (v) => `${v ?? 0} ms`;
@@ -70,6 +85,11 @@
     settingsMessage = `設定最終更新: ${settings.updated_at || "-"}`;
   }
 
+  async function loadLLMSettings() {
+    llmSettings = await fetchJSON("/api/settings/llm");
+    llmSettingsMessage = `LLM設定最終更新: ${llmSettings.updated_at || "-"}`;
+  }
+
   async function saveSettings(event) {
     event.preventDefault();
     try {
@@ -81,6 +101,20 @@
       settingsMessage = `保存しました (${updated.updated_at})`;
     } catch (err) {
       settingsMessage = `保存失敗: ${err.message}`;
+    }
+  }
+
+  async function saveLLMSettings(event) {
+    event.preventDefault();
+    try {
+      const updated = await fetchJSON("/api/settings/llm", {
+        method: "POST",
+        body: JSON.stringify(llmSettings)
+      });
+      llmSettings = updated;
+      llmSettingsMessage = `保存しました (${updated.updated_at})`;
+    } catch (err) {
+      llmSettingsMessage = `保存失敗: ${err.message}`;
     }
   }
 
@@ -136,6 +170,44 @@
     }
   }
 
+  async function runLLMUITest() {
+    llmUIResult = "実行中...";
+    try {
+      const result = await fetchJSON("/api/tests/llm/ui", {
+        method: "POST",
+        body: JSON.stringify({
+          text: llmUIText,
+          persona_override: llmUIPersona
+        })
+      });
+      llmUIResult = JSON.stringify(result, null, 2);
+      await loadOverview();
+    } catch (err) {
+      llmUIResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runLLMStackchanTest() {
+    llmStackchanResult = "実行中...";
+    try {
+      const result = await fetchJSON("/api/tests/llm/stackchan", {
+        method: "POST",
+        body: JSON.stringify({
+          text: llmStackchanText,
+          persona_override: llmStackchanPersona,
+          speaker: Number(llmStackchanSpeaker) || 1,
+          expression: llmStackchanExpression,
+          motion: llmStackchanMotion,
+          chunk_version: llmStackchanChunkVersion
+        })
+      });
+      llmStackchanResult = JSON.stringify(result, null, 2);
+      await loadOverview();
+    } catch (err) {
+      llmStackchanResult = `失敗: ${err.message}`;
+    }
+  }
+
   $: alerts = (() => {
     const list = [];
     if ((snapshot.pipeline?.total_latency_ms || 0) > thresholds.totalLatencyMs) {
@@ -154,7 +226,7 @@
   })();
 
   onMount(async () => {
-    await Promise.all([loadOverview(), loadSettings()]);
+    await Promise.all([loadOverview(), loadSettings(), loadLLMSettings()]);
     timerId = setInterval(() => {
       loadOverview().catch(() => undefined);
     }, 3000);
@@ -210,6 +282,10 @@
         <div><dt>llm</dt><dd>{fmtMs(snapshot.pipeline?.llm_latency_ms || 0)}</dd></div>
         <div><dt>tts</dt><dd>{fmtMs(snapshot.pipeline?.tts_latency_ms || 0)}</dd></div>
         <div><dt>total</dt><dd>{fmtMs(snapshot.pipeline?.total_latency_ms || 0)}</dd></div>
+        <div><dt>LLM input tokens</dt><dd>{snapshot.pipeline?.llm_input_token_count ?? 0}</dd></div>
+        <div><dt>LLM output tokens</dt><dd>{snapshot.pipeline?.llm_output_token_count ?? 0}</dd></div>
+        <div><dt>LLM total tokens</dt><dd>{snapshot.pipeline?.llm_total_token_count ?? 0}</dd></div>
+        <div><dt>context turns</dt><dd>{snapshot.pipeline?.llm_effective_turns_in_context ?? 0}</dd></div>
         <div><dt>TTS Buffer Status</dt><dd>{snapshot.pipeline?.tts_watermark_status || "-"}</dd></div>
         <div><dt>TTS Buffered</dt><dd>{fmtMs(snapshot.pipeline?.tts_buffered_ms || 0)}</dd></div>
         <div><dt>Low Water Events</dt><dd>{snapshot.pipeline?.tts_low_water_count ?? 0}</dd></div>
@@ -262,6 +338,20 @@
     </section>
 
     <section class="card panel">
+      <h2>LLM 設定</h2>
+      <form class="settings-form" on:submit={saveLLMSettings}>
+        <label>System Prompt
+          <textarea rows="5" bind:value={llmSettings.system_prompt}></textarea>
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">LLM設定を保存</button>
+          <button type="button" class="btn" on:click={() => loadLLMSettings().catch(() => undefined)}>再読込</button>
+        </div>
+        <p class="message">{llmSettingsMessage}</p>
+      </form>
+    </section>
+
+    <section class="card panel">
       <h2>疎通テスト</h2>
       <p>STT/LLM/TTS の最小パイプラインを実行し、レイテンシを表示します。</p>
       <div class="controls">
@@ -289,6 +379,24 @@
         <audio class="audio-preview" controls src={voicevoxAudioSrc}></audio>
       {/if}
       <pre class="result">{voicevoxResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>LLM UI 単体テスト</h2>
+      <p>OpenAI LLM の応答と token 使用量を WebUI から確認します。</p>
+      <form class="settings-form" on:submit|preventDefault={() => runLLMUITest().catch(() => undefined)}>
+        <label>入力テキスト
+          <textarea rows="3" bind:value={llmUIText}></textarea>
+        </label>
+        <label>persona override（任意）
+          <textarea rows="2" bind:value={llmUIPersona}></textarea>
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">LLM テスト実行</button>
+          <button type="button" class="btn" on:click={() => { llmUIResult = "未実行"; }}>結果クリア</button>
+        </div>
+      </form>
+      <pre class="result">{llmUIResult}</pre>
     </section>
 
     <section class="card panel">
@@ -328,6 +436,48 @@
         </div>
       </form>
       <pre class="result">{stackchanResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>LLM Stackchan 連携テスト</h2>
+      <p>text → LLM → Voicevox → Stackchan 送信までを一括確認します。</p>
+      <form class="settings-form" on:submit|preventDefault={() => runLLMStackchanTest().catch(() => undefined)}>
+        <label>入力テキスト
+          <textarea rows="3" bind:value={llmStackchanText}></textarea>
+        </label>
+        <label>persona override（任意）
+          <textarea rows="2" bind:value={llmStackchanPersona}></textarea>
+        </label>
+        <label>speaker
+          <input type="number" min="1" bind:value={llmStackchanSpeaker} />
+        </label>
+        <label>expression
+          <select bind:value={llmStackchanExpression}>
+            <option value="neutral">neutral</option>
+            <option value="happy">happy</option>
+            <option value="sad">sad</option>
+            <option value="surprised">surprised</option>
+          </select>
+        </label>
+        <label>motion
+          <select bind:value={llmStackchanMotion}>
+            <option value="idle">idle</option>
+            <option value="nod">nod</option>
+            <option value="shake">shake</option>
+          </select>
+        </label>
+        <label>chunk version
+          <select bind:value={llmStackchanChunkVersion}>
+            <option value="1.0">1.0 (legacy fixed-byte)</option>
+            <option value="1.1">1.1 (frame-based)</option>
+          </select>
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">LLM 連携テスト実行</button>
+          <button type="button" class="btn" on:click={() => { llmStackchanResult = "未実行"; }}>結果クリア</button>
+        </div>
+      </form>
+      <pre class="result">{llmStackchanResult}</pre>
     </section>
   </section>
 

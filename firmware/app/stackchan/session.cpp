@@ -11,6 +11,9 @@
 #include <ArduinoJson.h>
 #include <M5Unified.h>
 #include <mbedtls/base64.h>
+extern "C" {
+#include <opus.h>
+}
 
 namespace App {
 
@@ -428,6 +431,7 @@ void StackchanSession::handleTTSChunk(const String& payloadJson) {
 
   const char* requestId = payload["request_id"] | "";
   const char* streamId = payload["stream_id"] | "";
+  const char* codec = payload["codec"] | "pcm";
   int chunkIndex = payload["chunk_index"] | -1;
   int frameDurationMs = payload["frame_duration_ms"] | 0;
   int samplesPerChunk = payload["samples_per_chunk"] | 0;
@@ -436,15 +440,16 @@ void StackchanSession::handleTTSChunk(const String& payloadJson) {
 
   // P8-15: v1.1 形式（stream_id + frame_duration_ms + samples_per_chunk）を優先処理します。
   if (String(streamId).length() > 0 && frameDurationMs > 0 && samplesPerChunk > 0) {
-    if (!enqueueTTSFrame(String(requestId), String(streamId), chunkIndex, frameDurationMs, samplesPerChunk, String(audioBase64))) {
+    if (!enqueueTTSFrame(String(requestId), String(streamId), chunkIndex, frameDurationMs, samplesPerChunk, String(audioBase64), String(codec))) {
       Serial.printf("[TTS] request_id=%s stream_id=%s frame enqueue failed idx=%d\n",
         requestId, streamId, chunkIndex);
       return;
     }
 
-    Serial.printf("[TTS] request_id=%s stream_id=%s frame queued idx=%d buffered_ms=%u frames=%u\n",
+    Serial.printf("[TTS] request_id=%s stream_id=%s codec=%s frame queued idx=%d buffered_ms=%u frames=%u\n",
       requestId,
       streamId,
+      codec,
       chunkIndex,
       static_cast<unsigned>(_ttsBufferedMs),
       static_cast<unsigned>(_ttsFrameCount));
@@ -479,12 +484,16 @@ void StackchanSession::handleTTSEnd(const String& payloadJson) {
 
   // P8-15: フレームキュー方式（v1.1）では tts.end をストリーム終端として扱います。
   if (_ttsStreamRequestId == String(requestId)) {
+    if (String(codec).length() > 0) {
+      _ttsStreamCodec = String(codec);
+    }
     if (sampleRateHz > 0) {
       _ttsSampleRateHz = static_cast<uint32_t>(sampleRateHz);
     }
     _ttsStreamEnded = true;
-    Serial.printf("[TTS] request_id=%s stream playback pending buffered_ms=%u frames=%u sample_rate_hz=%u\n",
+    Serial.printf("[TTS] request_id=%s stream playback pending codec=%s buffered_ms=%u frames=%u sample_rate_hz=%u\n",
       requestId,
+      _ttsStreamCodec.c_str(),
       static_cast<unsigned>(_ttsBufferedMs),
       static_cast<unsigned>(_ttsFrameCount),
       static_cast<unsigned>(_ttsSampleRateHz));
@@ -801,6 +810,8 @@ void StackchanSession::clearTTSFrameQueue() {
   _ttsExpectedChunkIndex = 0;
   _ttsStreamRequestId = "";
   _ttsStreamId = "";
+  _ttsStreamCodec = "pcm";
+  resetOpusDecoder();
 
   // P8-16: concealment 状態をリセットします。
   if (_ttsLastGoodFrameBytes != nullptr) {
@@ -882,7 +893,8 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,                 
                                        int chunkIndex,
                                        int frameDurationMs,
                                        int samplesPerChunk,
-                                       const String& audioBase64) {
+                                       const String& audioBase64,
+                                       const String& codec) {
   // ─────────────────────────────────────────────────────────────────────────
   // [Producer: TTS フレーム受信ハンドラ]
   // P8-17: WebSocket 受信イベントからの呼び出し
@@ -906,7 +918,16 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,                 
     clearTTSFrameQueue();
     _ttsStreamRequestId = requestId;
     _ttsStreamId = streamId;
+    _ttsStreamCodec = codec.length() > 0 ? codec : "pcm";
     _ttsExpectedChunkIndex = 0;
+  }
+
+  if (codec.length() > 0 && _ttsStreamCodec != codec) {
+    Serial.printf("[TTS] request_id=%s stream_id=%s codec changed %s -> %s (ignored)\n",
+      requestId.c_str(),
+      streamId.c_str(),
+      _ttsStreamCodec.c_str(),
+      codec.c_str());
   }
 
   if (chunkIndex != _ttsExpectedChunkIndex) {
@@ -924,8 +945,13 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,                 
     Serial.printf("[TTS] request_id=%s stream_id=%s gap detected missing=%d idx=%d expected=%d\n",
       requestId.c_str(), streamId.c_str(), gapCount, chunkIndex, _ttsExpectedChunkIndex);
 
-    // concealment フレームを挿入してギャップを埋めます。
-    insertConcealmentFrames(gapCount, frameDurationMs, samplesPerChunk);
+    if (_ttsStreamCodec == "pcm") {
+      // PCM は concealment フレームを挿入してギャップを埋めます。
+      insertConcealmentFrames(gapCount, frameDurationMs, samplesPerChunk);
+    } else {
+      // Opus はデコーダ状態を維持しつつ、欠落分はスキップして先へ進みます。
+      _ttsExpectedChunkIndex += gapCount;
+    }
   }
 
   uint8_t* decoded = nullptr;
@@ -958,6 +984,23 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,                 
     return true;
   }
 
+  // P8-18 補足: ストリーム先頭frame（chunkIndex == 0）到達時にサンプルレートを即時推算します。
+  // P8-15 の prebuffer 設計では tts.end 到着前に再生が始まるため、_ttsSampleRateHz が
+  // 初期値（FW_AUDIO_SAMPLE_RATE）のままだと初回のみ音が低くこもる現象が発生します。
+  // samplesPerChunk / frameDurationMs の比からレートを推算することで、tts.end を待たずに
+  // 正しいサンプルレートで再生できるようにします。
+  if (chunkIndex == 0 && samplesPerChunk > 0 && frameDurationMs > 0) {
+    const uint32_t inferredHz =
+        static_cast<uint32_t>(samplesPerChunk) * 1000u /
+        static_cast<uint32_t>(frameDurationMs);
+    if (inferredHz > 0 && inferredHz != _ttsSampleRateHz) {
+      Serial.printf("[TTS] sample_rate_hz inferred from first chunk: %u -> %u\n",
+                    static_cast<unsigned>(_ttsSampleRateHz),
+                    static_cast<unsigned>(inferredHz));
+      _ttsSampleRateHz = inferredHz;
+    }
+  }
+
   TTSFrameSlot& slot = _ttsFrameQueue[_ttsFrameTail];
   slot.bytes = decoded;
   slot.byteLen = decodedLen;
@@ -970,15 +1013,17 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,                 
   _ttsBufferedMs += static_cast<uint32_t>(frameDurationMs);
   _ttsExpectedChunkIndex++;
 
-  // P8-16: concealment の減衰コピー用に、正常フレームのコピーを保持します。
-  if (_ttsLastGoodFrameBytes != nullptr) {
-    free(_ttsLastGoodFrameBytes);
-    _ttsLastGoodFrameBytes = nullptr;
-  }
-  _ttsLastGoodFrameBytes = static_cast<uint8_t*>(malloc(decodedLen));
-  if (_ttsLastGoodFrameBytes != nullptr) {
-    memcpy(_ttsLastGoodFrameBytes, decoded, decodedLen);
-    _ttsLastGoodFrameLen = decodedLen;
+  // P8-16: PCM のみ concealment の減衰コピー用に正常フレームを保持します。
+  if (_ttsStreamCodec == "pcm") {
+    if (_ttsLastGoodFrameBytes != nullptr) {
+      free(_ttsLastGoodFrameBytes);
+      _ttsLastGoodFrameBytes = nullptr;
+    }
+    _ttsLastGoodFrameBytes = static_cast<uint8_t*>(malloc(decodedLen));
+    if (_ttsLastGoodFrameBytes != nullptr) {
+      memcpy(_ttsLastGoodFrameBytes, decoded, decodedLen);
+      _ttsLastGoodFrameLen = decodedLen;
+    }
   }
 
   return true;
@@ -1061,6 +1106,103 @@ bool StackchanSession::dequeueTTSPlaybackBatch(uint16_t targetDurationMs,
   return true;
 }
 
+bool StackchanSession::dequeueTTSFrame(TTSFrameSlot* outFrame) {
+  if (outFrame == nullptr || _ttsFrameCount == 0) {
+    return false;
+  }
+
+  TTSFrameSlot& slot = _ttsFrameQueue[_ttsFrameHead];
+  *outFrame = slot;
+
+  if (_ttsBufferedMs >= slot.frameDurationMs) {
+    _ttsBufferedMs -= slot.frameDurationMs;
+  } else {
+    _ttsBufferedMs = 0;
+  }
+
+  slot.bytes = nullptr;
+  slot.byteLen = 0;
+  slot.frameDurationMs = 0;
+  slot.samplesPerChunk = 0;
+  slot.chunkIndex = 0;
+
+  _ttsFrameHead = (_ttsFrameHead + 1) % kTTSFrameQueueCapacity;
+  _ttsFrameCount--;
+  return true;
+}
+
+void StackchanSession::resetOpusDecoder() {
+  if (_ttsOpusDecoder != nullptr) {
+    opus_decoder_destroy(static_cast<OpusDecoder*>(_ttsOpusDecoder));
+    _ttsOpusDecoder = nullptr;
+  }
+  _ttsOpusDecoderSampleRateHz = 0;
+}
+
+bool StackchanSession::ensureOpusDecoder(uint32_t sampleRateHz) {
+  if (sampleRateHz != 8000 && sampleRateHz != 12000 && sampleRateHz != 16000 && sampleRateHz != 24000 && sampleRateHz != 48000) {
+    Serial.printf("[TTS][opus] unsupported decoder sample_rate_hz=%u\n", static_cast<unsigned>(sampleRateHz));
+    return false;
+  }
+
+  if (_ttsOpusDecoder != nullptr && _ttsOpusDecoderSampleRateHz == sampleRateHz) {
+    return true;
+  }
+
+  resetOpusDecoder();
+
+  int err = OPUS_OK;
+  OpusDecoder* decoder = opus_decoder_create(static_cast<opus_int32>(sampleRateHz), 1, &err);
+  if (decoder == nullptr || err != OPUS_OK) {
+    Serial.printf("[TTS][opus] decoder create failed err=%d\n", err);
+    return false;
+  }
+
+  _ttsOpusDecoder = decoder;
+  _ttsOpusDecoderSampleRateHz = sampleRateHz;
+  return true;
+}
+
+bool StackchanSession::decodeOpusFrame(const uint8_t* opusBytes, size_t opusLen, uint32_t sampleRateHz, uint8_t** outPcmBytes, size_t* outPcmLen) {
+  if (outPcmBytes == nullptr || outPcmLen == nullptr || opusBytes == nullptr || opusLen == 0) {
+    return false;
+  }
+  *outPcmBytes = nullptr;
+  *outPcmLen = 0;
+
+  if (!ensureOpusDecoder(sampleRateHz)) {
+    return false;
+  }
+
+  const int maxSamplesPerChannel = static_cast<int>((sampleRateHz * 60U) / 1000U);
+  if (maxSamplesPerChannel <= 0) {
+    return false;
+  }
+
+  int16_t* pcmBuffer = static_cast<int16_t*>(malloc(static_cast<size_t>(maxSamplesPerChannel) * sizeof(int16_t)));
+  if (pcmBuffer == nullptr) {
+    Serial.println("[TTS][opus] pcm decode buffer allocation failed");
+    return false;
+  }
+
+  const int decodedSamples = opus_decode(
+    static_cast<OpusDecoder*>(_ttsOpusDecoder),
+    reinterpret_cast<const unsigned char*>(opusBytes),
+    static_cast<opus_int32>(opusLen),
+    pcmBuffer,
+    maxSamplesPerChannel,
+    0);
+  if (decodedSamples < 0) {
+    Serial.printf("[TTS][opus] decode failed code=%d\n", decodedSamples);
+    free(pcmBuffer);
+    return false;
+  }
+
+  *outPcmBytes = reinterpret_cast<uint8_t*>(pcmBuffer);
+  *outPcmLen = static_cast<size_t>(decodedSamples) * sizeof(int16_t);
+  return true;
+}
+
 void StackchanSession::processTTSPlaybackQueue() {
   // ─────────────────────────────────────────────────────────────────────────
   // [キュー終端処理]
@@ -1118,6 +1260,52 @@ void StackchanSession::processTTSPlaybackQueue() {
       static_cast<unsigned>(_ttsBufferedMs),
       static_cast<unsigned>(kTTSLowWaterMs),
       static_cast<unsigned>(_ttsFrameCount));
+  }
+
+  if (_ttsStreamCodec == "opus") {
+    // Opus は 1 フレームずつデコードし、PCM16 に戻して再生します。
+    TTSFrameSlot frame;
+    if (!dequeueTTSFrame(&frame)) {
+      return;
+    }
+
+    uint8_t* decodedPcm = nullptr;
+    size_t decodedPcmLen = 0;
+    if (!decodeOpusFrame(frame.bytes, frame.byteLen, _ttsSampleRateHz, &decodedPcm, &decodedPcmLen)) {
+      Serial.printf("[TTS][opus] request_id=%s decode failed idx=%d\n", _ttsStreamRequestId.c_str(), frame.chunkIndex);
+      if (frame.bytes != nullptr) {
+        free(frame.bytes);
+      }
+      clearTTSFrameQueue();
+      return;
+    }
+
+    if (frame.bytes != nullptr) {
+      free(frame.bytes);
+    }
+
+    const bool started = _ttsPlayer.playPCM16(decodedPcm, decodedPcmLen, _ttsSampleRateHz, true);
+    free(decodedPcm);
+
+    if (!started) {
+      Serial.printf("[TTS][opus] request_id=%s playback start failed decoded_bytes=%u\n",
+        _ttsStreamRequestId.c_str(),
+        static_cast<unsigned>(decodedPcmLen));
+      clearTTSFrameQueue();
+      return;
+    }
+
+    if (_conversationState != ConversationState::Speaking) {
+      setConversationState(ConversationState::Speaking, "tts stream playback started");
+    }
+
+    Serial.printf("[TTS][playback] request_id=%s codec=opus frame_index=%d decoded_bytes=%u buffered_after_dequeue_ms=%u frames_remaining=%u\n",
+      _ttsStreamRequestId.c_str(),
+      frame.chunkIndex,
+      static_cast<unsigned>(decodedPcmLen),
+      static_cast<unsigned>(_ttsBufferedMs),
+      static_cast<unsigned>(_ttsFrameCount));
+    return;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

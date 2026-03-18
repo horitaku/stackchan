@@ -158,8 +158,11 @@ class StackchanSession {
   bool _ttsStreamEnded{false};
   String _ttsStreamRequestId{""};
   String _ttsStreamId{""};
+  String _ttsStreamCodec{"pcm"};
   int _ttsExpectedChunkIndex{0};
   uint32_t _ttsSampleRateHz{FW_AUDIO_SAMPLE_RATE};
+  void* _ttsOpusDecoder{nullptr};
+  uint32_t _ttsOpusDecoderSampleRateHz{0};
 
   // P8-16: concealment（欠落補完）関連
   // 欠落検知時に挿入する最大フレーム数（80ms @ 20ms/frame）
@@ -207,9 +210,14 @@ class StackchanSession {
                        int chunkIndex,
                        int frameDurationMs,
                        int samplesPerChunk,
-                       const String& audioBase64);
+                       const String& audioBase64,
+                       const String& codec);
   bool dequeueTTSPlaybackBatch(uint16_t targetDurationMs, uint8_t** outBytes, size_t* outByteLen, uint16_t* outDurationMs);
+  bool dequeueTTSFrame(TTSFrameSlot* outFrame);
   void processTTSPlaybackQueue();
+  void resetOpusDecoder();
+  bool ensureOpusDecoder(uint32_t sampleRateHz);
+  bool decodeOpusFrame(const uint8_t* opusBytes, size_t opusLen, uint32_t sampleRateHz, uint8_t** outPcmBytes, size_t* outPcmLen);
   /**
    * @brief 欠落フレームに対して concealment（補完）を挿入します。
    * 直前の正常フレームが存在する場合は振幅を 50% に減衰したコピーを、

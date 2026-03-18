@@ -29,6 +29,10 @@ run = "node ./tools/mise/fw.cjs upmon"
 description = "Clean firmware build artifacts"
 run = "node ./tools/mise/fw.cjs clean"
 
+[tasks."fw:compiledb"]
+description = "Generate compile_commands.json for IntelliSense (run after adding/updating libraries)"
+run = "node ./tools/mise/fw.cjs compiledb"
+
 [tasks."server:healthz"]
 description = "Check server healthz endpoint"
 run = "node ./tools/mise/server.cjs healthz"

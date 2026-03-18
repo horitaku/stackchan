@@ -418,6 +418,8 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 				AudioBase64:     base64.StdEncoding.EncodeToString(frame),
 			}
 			if err := h.sendEventWithVersion(conn, s, "tts.chunk", payload, "1.1"); err != nil {
+				// P8-16: chunk 送信失敗を downlink 欠落の運用メトリクスとして記録します。
+				h.runtimeState.OnTTSChunkSendFail(requestID, streamID)
 				return err
 			}
 
@@ -458,6 +460,8 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 			AudioBase64: base64.StdEncoding.EncodeToString(audioBytes[start:end]),
 		}
 		if err := h.sendEvent(conn, s, "tts.chunk", payload); err != nil {
+			// P8-16: chunk 送信失敗を downlink 欠落の運用メトリクスとして記録します。
+			h.runtimeState.OnTTSChunkSendFail(requestID, "")
 			return err
 		}
 	}

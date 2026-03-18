@@ -174,6 +174,11 @@ class StackchanSession {
   int _ttsMissingChunkCount{0};
   int _ttsConcealmentFrameCount{0};
 
+  // P8-19: watermark 状態追跡
+  String _ttsWatermarkStatus{"normal"};          ///< 現在の watermark 状態 ("normal"|"low_water"|"high_water")
+  unsigned long _ttsWatermarkLastSentMs{0};    ///< 最後に watermark イベントを送信した時刻 (millis())
+  static constexpr unsigned long kWatermarkCooldownMs = 500; ///< 同一状態での送信間隔 (ms)
+
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
   void setConversationState(ConversationState next, const char* reason);
@@ -187,6 +192,7 @@ class StackchanSession {
   // 送信ヘルパー
   void sendHello();
   void sendHeartbeat();
+  void sendTTSBufferWatermark(const String& status, uint32_t bufferedMs, uint32_t thresholdMs, uint32_t framesInQueue);
   void updateAvatarFace();
   m5avatar::Expression toAvatarExpression(const String& expression) const;
   bool decodeBase64(const String& src, uint8_t** out, size_t* outLen);

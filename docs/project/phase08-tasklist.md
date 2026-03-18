@@ -26,7 +26,8 @@
 | P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Done |
 | P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Done |
 | P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Done |
-| P8-18 | Voicevox TTS の downlink を Opus 化し firmware でデコード再生する | server で PCM/WAV -> Opus フレーム化、`tts.chunk` で Opus 配信、firmware で Opus デコード再生、互換 fallback、検証手順 | 中 | 帯域削減と jitter 耐性を強化し、低遅延会話での再生安定性を高めるため | Planned |
+| P8-18 | Voicevox TTS の downlink を Opus 化し firmware でデコード再生する | server で PCM/WAV -> Opus フレーム化、`tts.chunk` で Opus 配信、firmware で Opus デコード再生、互換 fallback、検証手順 | 中 | 帯域削減と jitter 耐性を強化し、低遅延会話での再生安定性を高めるため | Done |
+| P8-19 | runtime_metrics に watermark 状態統合する | firmware からの watermark イベント送信、server 側 metrics 記録処理、WebUI Overview パネル拡張、可視化ダッシュボード | 低 | ネットワーク揺らぎの履歴分析と定量的な診断を可能にし、運用時の最適化判定を支援するため | Planned |
 
 ## 2.1 実行メモ（2026-03-15）
 
@@ -205,6 +206,73 @@ P8-18 以降で活用する予定の項目：
 - high-water ドロップ検知時の server への backpressure 信号（初期案）
 - lip sync の on-demand 化（80ms 周期制限 → 消費タイミング同期）
 
+## 2.21 P8-19 runtime_metrics に watermark 状態統合メモ（将来）
+
+### 目的と背景（Phase 2）
+
+P8-17 で追加した watermark ログ（`[TTS][watermark]`）は シリアル出力のみであり、ログファイル喪失時の履歴が失われます。
+本タスクは **watermark イベントを `runtime_metrics` DB に記録** し、WebUI ダッシュボードで履歴分析とネットワーク診断を可能にします。
+
+### 実装予定範囲
+
+#### 1. firmware からの watermark イベント送信
+- Producer フロー（`enqueueTTSFrame()`）で low-water / high-water イベント検出時に server へ通知
+- 最小限の overhead で実装（ログ出力時に同時送信）
+
+#### 2. server 側の metrics 記録処理
+- WebSocket ハンドラで watermark イベント受信
+- `runtime_metrics` テーブルへ以下を記録：
+  ```sql
+  metric_name = 'tts_buffer_watermark_status'
+  metric_value = 'low_water' | 'high_water' | 'normal'
+  
+  metric_name = 'tts_buffered_ms'
+  metric_value = [実際のバッファ深さ]
+  
+  metric_name = 'tts_threshold_low_water_ms'
+  metric_value = [low-water 閾値]
+  ```
+
+#### 3. WebUI Overview パネル拡張
+- `GET /api/runtime/overview` で watermark 統計を公開：
+  ```json
+  {
+    "pipeline": {
+      "tts_buffered_ms": 50,
+      "tts_low_water_count_10m": 12,
+      "tts_high_water_drop_count_10m": 1,
+      "tts_watermark_status_current": "low_water"
+    }
+  }
+  ```
+
+#### 4. 可視化ダッシュボード（WebUI）
+- 過去 1 時間の watermark 状態を時系列グラフで表示
+- low-water 発生頻度、継続時間
+- ネットワーク不具合の可視化（「18:00 に毎日 peak」等）
+
+### 実装の優先条件
+
+- ✅ P8-17 完了：watermark ログが firmware に存在
+- ✅ P8-18 完了：Opus downlink で帯域削減後の効果測定ベースラインが確立
+- 🔄 protocol 拡張：watermark イベントを protocol に正式追加 するか検討
+
+### 設計の特徴
+
+| 観点 | 効果 |
+|------|------|
+| **履歴分析** | 過去のネットワーク揺らぎを時系列で追跡可能 |
+| **定量的診断** | Wi-Fi 環境の不具合を「low_water 12 回/10分」と数値化 |
+| **最適化検証** | P8-18 (Opus) 効果を実測値で定量的に評価 |
+| **SLA 監視** | 「過去 24 時間の low-water 発生時間」をクエリで即答 |
+| **段階導入** | Phase 2 なので、P8-18 後に最適なタイミングで着手可能 |
+
+### リスク軽減
+
+- ログ出力との **両立実装**：既存 P8-17 ログを壊さない
+- 後方互換性：firmware-server 間の新 protocol 追加が必要だが、fallback パスを用意
+- DB スキーマ：既存 `runtime_metrics` テーブルで対応可能（schema 変更不要）
+
 ## 2.10 P8-04 runtime_metrics 永続化メモ（2026-03-17）
 
 - server に runtime metrics 永続化ストアを追加し、`DATABASE_URL` が設定されている場合に Postgres へ保存するようにしました。
@@ -349,6 +417,87 @@ P8-18 以降で活用する予定の項目：
   - server: Voicevox の生成音声（PCM/WAV）を Opus へ変換し、`tts.chunk` と `tts.end(codec=opus)` で downlink 配信
   - firmware: Opus チャンクのデコード再生、既存 `codec=pcm` fallback 維持
   - 運用: `P8-10` の計測項目（first frame latency / cadence jitter / E2E latency）で効果検証
+
+## 2.23 P8-18 補足: 初回こもり修正メモ（2026-03-19）
+
+### 症状
+
+- firmware アップロード直後の初回 TTS 再生のみ、音声が低くこもった音になる。
+- 2 回目以降は正常な音質で再生される。
+
+### 根本原因
+
+```
+_ttsSampleRateHz の初期値 = FW_AUDIO_SAMPLE_RATE = 16000
+   ↓
+P8-15 の prebuffer 設計により、tts.end 到着前に再生が開始される
+   ↓
+初回: tts.end 未受信 → _ttsSampleRateHz=16000 のまま再生
+   ↓
+実際の TTS 音声が 24000Hz で生成されていた場合 → ピッチが低くこもる
+   ↓
+2 回目以降: 前回 tts.end で _ttsSampleRateHz=24000 が設定済み → 正常
+```
+
+### 修正内容
+
+- `firmware/app/stackchan/session.cpp` の `enqueueTTSFrame()` を更新しました。
+  - ストリームの初回フレーム（`chunkIndex == 0`）受信時に `samplesPerChunk * 1000 / frameDurationMs` でサンプルレートを推算します。
+  - 推算値が現在の `_ttsSampleRateHz` と異なる場合、即時更新します。
+  - ログ: `[TTS] sample_rate_hz inferred from first chunk: 16000 -> 24000`
+  - これにより `tts.end` の到着を待たずに正しいサンプルレートで再生できます。
+
+### 検証結果
+
+- `pio run -e stackchan_cores3` 成功
+- ファームウェア書き込み後の初回再生で正しいサンプルレートが適用されることをログで確認できます。
+
+## 2.22 P8-18 実行メモ（2026-03-19）
+
+### server 側（audio / web / protocol）
+
+- `server/internal/audio/opus_downlink.go` を追加しました。
+  - Voicevox から受け取った WAV を `ffmpeg`（`libopus`）で OGG/Opus に変換します。
+  - OGG ページから Opus 音声パケットを抽出し、`tts.chunk(v1.1)` で送信できるフレーム列を生成します。
+  - 変換失敗時は error を返し、呼び出し側で PCM fallback できる設計にしました。
+- `server/internal/web/ws_handler.go` の `sendTTSAudio()` を更新しました。
+  - `codec=opus` かつ `chunk_version=1.1` の場合は Opus downlink を優先します。
+  - Opus 変換に失敗した場合は warning を残し、`codec=pcm` へ自動 fallback します。
+  - `tts.chunk(v1.1)` payload に optional `codec` を付与します（`opus` または `pcm`）。
+- `server/internal/web/api_handler.go` を更新しました。
+  - `POST /api/tests/voicevox/stackchan` で `codec`（`opus|pcm`）を受け付けます。
+  - default を `codec=opus` / `chunk_version=1.1` に変更しました。
+- `server/internal/protocol/events.go` を更新し、`TTSChunkPayloadV11` に optional `codec` を追加しました。
+- テストを追加しました。
+  - `server/internal/audio/opus_downlink_test.go`
+  - OGG からの Opus パケット抽出の正常系/異常系を検証します。
+
+### firmware 側（session）
+
+- `firmware/app/stackchan/session.cpp` / `session.h` を更新しました。
+  - `tts.chunk(v1.1)` の `codec` を受信してストリームごとに保持します。
+  - `codec=opus` の場合、`esp32_opus`（`opus.h`）を使ってフレーム単位で decode し、PCM16 として再生します。
+  - `codec=pcm` の既存再生パス（batch dequeue + concealment）を維持し、後方互換を確保します。
+  - ストリーム終了/クリア時に Opus decoder を破棄し、リークを防止します。
+
+### protocol / docs 側
+
+- `protocol/websocket/schemas/tts.chunk.schema.json` に optional `codec` を追加しました。
+- `protocol/websocket/events.md` / `protocol/versioning.md` / `protocol/websocket/validation-checklist.md` を更新し、
+  v1.1 の `codec` 運用と互換性方針を明記しました。
+- `protocol/examples/tts.chunk.example.json` に `codec: "opus"` を追加しました。
+
+### 検証結果
+
+- `cd server && go test ./...` 成功
+- `cd firmware && pio run -e stackchan_cores3` 成功
+
+### 手動確認手順（P8-18）
+
+1. `POST /api/tests/voicevox/stackchan` を `{"codec":"opus","chunk_version":"1.1"}` で実行する
+2. firmware ログで `codec=opus frame queued` と `codec=opus frame_index=...` の再生ログを確認する
+3. `tts.end` 到達後に stream drain で `speaking -> idle` へ遷移することを確認する
+4. `ffmpeg` 未導入または Opus 変換失敗ケースで warning の後に `codec=pcm` fallback 再生されることを確認する
 
 ## 2.17 P8-14 tts.chunk 音声フレーム再設計メモ（2026-03-18）
 

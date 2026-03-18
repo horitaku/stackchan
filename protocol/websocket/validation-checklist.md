@@ -15,6 +15,7 @@
 - audio.end の stream_id/final_chunk_index が存在する
 - tts.chunk(v1.1) の stream_id/chunk_index/frame_duration_ms/samples_per_chunk/audio_base64 が存在する
 - tts.chunk(v1.1) は sent_at または playout_ts の少なくとも一方を持つ
+- tts.chunk(v1.1) の codec が存在する場合は `pcm` または `opus` である
 - conversation.cancel の reason/source が存在する
 - tts.stop の reason が存在する
 - audio.stream_abort の stream_id/reason が存在する

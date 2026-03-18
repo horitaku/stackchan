@@ -139,6 +139,16 @@ class StackchanSession {
   int _ttsExpectedChunkIndex{0};
   uint32_t _ttsSampleRateHz{FW_AUDIO_SAMPLE_RATE};
 
+  // P8-16: concealment（欠落補完）関連
+  // 欠落検知時に挿入する最大フレーム数（80ms @ 20ms/frame）
+  static constexpr int kMaxConcealmentFrames = 4;
+  // 直前の正常フレームのコピーを保持して減衰コピー生成に使用します。
+  uint8_t* _ttsLastGoodFrameBytes{nullptr};
+  size_t   _ttsLastGoodFrameLen{0};
+  // ストリーム内の欠落チャンク数と補完フレーム数の累計です（ログ用）。
+  int _ttsMissingChunkCount{0};
+  int _ttsConcealmentFrameCount{0};
+
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
   void setConversationState(ConversationState next, const char* reason);
@@ -178,6 +188,15 @@ class StackchanSession {
                        const String& audioBase64);
   bool dequeueTTSPlaybackBatch(uint16_t targetDurationMs, uint8_t** outBytes, size_t* outByteLen, uint16_t* outDurationMs);
   void processTTSPlaybackQueue();
+  /**
+   * @brief 欠落フレームに対して concealment（補完）を挿入します。
+   * 直前の正常フレームが存在する場合は振幅を 50% に減衰したコピーを、
+   * 存在しない場合は無音（ゼロ PCM）を挿入します。
+   * @param gapCount  補完するフレーム数
+   * @param frameDurationMs フレーム長（ms）
+   * @param samplesPerChunk 1 フレームのサンプル数
+   */
+  void insertConcealmentFrames(int gapCount, int frameDurationMs, int samplesPerChunk);
 };
 
 }  // namespace App

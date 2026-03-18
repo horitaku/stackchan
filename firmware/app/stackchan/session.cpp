@@ -779,10 +779,84 @@ void StackchanSession::clearTTSFrameQueue() {
   _ttsExpectedChunkIndex = 0;
   _ttsStreamRequestId = "";
   _ttsStreamId = "";
+
+  // P8-16: concealment 状態をリセットします。
+  if (_ttsLastGoodFrameBytes != nullptr) {
+    free(_ttsLastGoodFrameBytes);
+    _ttsLastGoodFrameBytes = nullptr;
+  }
+  _ttsLastGoodFrameLen = 0;
+  _ttsMissingChunkCount = 0;
+  _ttsConcealmentFrameCount = 0;
 }
 
-bool StackchanSession::enqueueTTSFrame(const String& requestId,
-                                       const String& streamId,
+// P8-16: concealment（欠落補完）フレームをキューに挿入します。
+void StackchanSession::insertConcealmentFrames(int gapCount, int frameDurationMs, int samplesPerChunk) {
+  // 挿入するフレーム数を上限でキャップします（過度な無音挿入を防ぎます）。
+  const int insertCount = min(gapCount, kMaxConcealmentFrames);
+  const size_t frameByteLen = static_cast<size_t>(samplesPerChunk) * 2; // PCM16 mono
+
+  for (int i = 0; i < insertCount; i++) {
+    if (_ttsFrameCount >= kTTSFrameQueueCapacity) {
+      Serial.printf("[TTS][concealment] queue full, cannot insert frame %d/%d\n", i + 1, insertCount);
+      break;
+    }
+
+    const uint32_t nextBufferedMs = _ttsBufferedMs + static_cast<uint32_t>(frameDurationMs);
+    if (nextBufferedMs > kTTSHighWaterMs) {
+      Serial.printf("[TTS][concealment] high-water reached at frame %d/%d, stopping insertion\n",
+        i + 1, insertCount);
+      break;
+    }
+
+    uint8_t* concealFrame = static_cast<uint8_t*>(malloc(frameByteLen));
+    if (concealFrame == nullptr) {
+      Serial.printf("[TTS][concealment] malloc failed for frame %d/%d\n", i + 1, insertCount);
+      break;
+    }
+
+    if (_ttsLastGoodFrameBytes != nullptr && _ttsLastGoodFrameLen == frameByteLen) {
+      // 減衰コピー: 直前のフレームを振幅 50% に減らしてコピーします。
+      // 再生グリッチを目立ちにくくしながら音声継続感を保ちます。
+      // i=0 → 0.5倍、i=1 → 0.25倍 と徐々にフェードアウトします。
+      const int16_t* src = reinterpret_cast<const int16_t*>(_ttsLastGoodFrameBytes);
+      int16_t* dst = reinterpret_cast<int16_t*>(concealFrame);
+      const size_t sampleCount = frameByteLen / 2;
+      const int shiftBits = i + 1; // 1ビット右シフトで 1/2^(i+1) 倍に減衰
+      for (size_t s = 0; s < sampleCount; s++) {
+        dst[s] = static_cast<int16_t>(src[s] >> shiftBits);
+      }
+    } else {
+      // 無音補完: 量子化ノイズを避けるためゼロ埋めします。
+      memset(concealFrame, 0, frameByteLen);
+    }
+
+    TTSFrameSlot& slot = _ttsFrameQueue[_ttsFrameTail];
+    slot.bytes = concealFrame;
+    slot.byteLen = frameByteLen;
+    slot.frameDurationMs = static_cast<uint16_t>(frameDurationMs);
+    slot.samplesPerChunk = static_cast<uint16_t>(samplesPerChunk);
+    slot.chunkIndex = _ttsExpectedChunkIndex + i; // 仮インデックス
+
+    _ttsFrameTail = (_ttsFrameTail + 1) % kTTSFrameQueueCapacity;
+    _ttsFrameCount++;
+    _ttsBufferedMs += static_cast<uint32_t>(frameDurationMs);
+    _ttsConcealmentFrameCount++;
+  }
+
+  // gapCount 分の期待インデックスを進めます（concealment 挿入数に関わらず）。
+  _ttsExpectedChunkIndex += gapCount;
+
+  Serial.printf("[TTS][concealment] request_id=%s stream_id=%s gap=%d inserted=%d total_missing=%d total_conc=%d\n",
+    _ttsStreamRequestId.c_str(),
+    _ttsStreamId.c_str(),
+    gapCount,
+    insertCount,
+    _ttsMissingChunkCount,
+    _ttsConcealmentFrameCount);
+}
+
+bool StackchanSession::enqueueTTSFrame(const String& requestId,                                       const String& streamId,
                                        int chunkIndex,
                                        int frameDurationMs,
                                        int samplesPerChunk,
@@ -808,13 +882,22 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,
   }
 
   if (chunkIndex != _ttsExpectedChunkIndex) {
-    Serial.printf("[TTS] request_id=%s stream_id=%s unexpected frame idx=%d expected=%d\n",
-      requestId.c_str(),
-      streamId.c_str(),
-      chunkIndex,
-      _ttsExpectedChunkIndex);
-    clearTTSFrameQueue();
-    return false;
+    if (chunkIndex < _ttsExpectedChunkIndex) {
+      // 過去のインデックスは重複送信として無視します（再送など）。
+      Serial.printf("[TTS] request_id=%s stream_id=%s duplicate frame idx=%d expected=%d (skipped)\n",
+        requestId.c_str(), streamId.c_str(), chunkIndex, _ttsExpectedChunkIndex);
+      return true;
+    }
+
+    // chunkIndex > _ttsExpectedChunkIndex: ギャップを検出しました。
+    const int gapCount = chunkIndex - _ttsExpectedChunkIndex;
+    _ttsMissingChunkCount += gapCount;
+
+    Serial.printf("[TTS] request_id=%s stream_id=%s gap detected missing=%d idx=%d expected=%d\n",
+      requestId.c_str(), streamId.c_str(), gapCount, chunkIndex, _ttsExpectedChunkIndex);
+
+    // concealment フレームを挿入してギャップを埋めます。
+    insertConcealmentFrames(gapCount, frameDurationMs, samplesPerChunk);
   }
 
   uint8_t* decoded = nullptr;
@@ -858,6 +941,18 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,
   _ttsFrameCount++;
   _ttsBufferedMs += static_cast<uint32_t>(frameDurationMs);
   _ttsExpectedChunkIndex++;
+
+  // P8-16: concealment の減衰コピー用に、正常フレームのコピーを保持します。
+  if (_ttsLastGoodFrameBytes != nullptr) {
+    free(_ttsLastGoodFrameBytes);
+    _ttsLastGoodFrameBytes = nullptr;
+  }
+  _ttsLastGoodFrameBytes = static_cast<uint8_t*>(malloc(decodedLen));
+  if (_ttsLastGoodFrameBytes != nullptr) {
+    memcpy(_ttsLastGoodFrameBytes, decoded, decodedLen);
+    _ttsLastGoodFrameLen = decodedLen;
+  }
+
   return true;
 }
 
@@ -941,6 +1036,14 @@ bool StackchanSession::dequeueTTSPlaybackBatch(uint16_t targetDurationMs,
 void StackchanSession::processTTSPlaybackQueue() {
   if (_ttsFrameCount == 0) {
     if (_ttsStreamEnded && _ttsPlayer.state() == Audio::PlaybackState::Idle) {
+      // P8-16: ストリーム終端で concealment メトリクスをログ出力します。
+      if (_ttsMissingChunkCount > 0 || _ttsConcealmentFrameCount > 0) {
+        Serial.printf("[TTS][metrics] stream_id=%s request_id=%s missing_chunks=%d concealment_frames=%d\n",
+          _ttsStreamId.c_str(),
+          _ttsStreamRequestId.c_str(),
+          _ttsMissingChunkCount,
+          _ttsConcealmentFrameCount);
+      }
       clearTTSFrameQueue();
       if (_conversationState == ConversationState::Speaking) {
         setConversationState(ConversationState::Idle, "tts stream drained");

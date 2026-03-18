@@ -61,3 +61,9 @@
 2. Writer（server）で `version=1.1` を優先送信し、必要時のみ `1.0` fallback を許容する
 3. 観測期間で `1.0` トラフィックが解消されたことを確認する
 4. `1.0` fallback を削除し、`1.1` を strict 運用へ切り替える
+
+## 8. Phase 8 Opus Downlink Additions (P8-18)
+
+- `tts.chunk` v1.1 に optional `codec` フィールドを追加する（enum: `pcm`, `opus`）。
+- `codec` 未指定時は `pcm` として解釈し、既存 reader 実装との後方互換を維持する。
+- 互換分類: additive change（required 追加なし、既存 payload は有効）。

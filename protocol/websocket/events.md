@@ -19,6 +19,7 @@
 - conversation.cancel （フェーズ 8 追加）
 - tts.stop （フェーズ 8 追加）
 - audio.stream_abort （フェーズ 8 追加）
+- tts.buffer.watermark （フェーズ 8/P8-19 追加）
 
 ## 2. Common Envelope
 
@@ -250,6 +251,22 @@
   - reason: string (required, enum: interrupted, user_cancel, timeout, transport_error, device_error)
   - final_chunk_index: integer (optional, minimum: 0)
 
+### 5.11 tts.buffer.watermark（P8-19）
+
+- Direction: firmware -> server
+- Purpose: TTS 再生バッファの watermark 状態変化を server へ通知し、ネットワーク揺らぎの定量分析と runtime_metrics 記録を可能にする
+- JSON Schema: `protocol/websocket/schemas/tts.buffer.watermark.schema.json`
+- Example: `protocol/examples/tts.buffer.watermark.example.json`
+- Payload fields:
+  - request_id: string (required)
+  - stream_id: string (required)
+  - status: string (required, enum: normal, low_water, high_water)
+  - buffered_ms: integer (required, minimum: 0) — 現在のバッファ深さ（ms）
+  - threshold_ms: integer (required, minimum: 0) — 発火した watermark 閾値（ms）
+  - frames_in_queue: integer (required, minimum: 0) — 現在のキュー内フレーム数
+- 送信タイミング: watermark 状態が変化した時点のみ（low_water 持続中の連続送信は禁止）
+- 送信レート制限: 同一状態での再送は500ms 以上間隔を空ける
+
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 
 ### 6.1 バイナリ WebSocket フレームの構造
@@ -280,4 +297,4 @@ audio.stream_open 後に送信するバイナリ WebSocket フレームの構造
 
 ## 8. Deferred Candidates
 
-interrupt 系 3 イベントはフェーズ 8 で正式化済み。次候補は別途 backlog で管理する。
+interrupt 系 3 イベントはフェーズ 8 で正式化済み。`tts.buffer.watermark` は P8-19 で追加。次候補は別途 backlog で管理する。

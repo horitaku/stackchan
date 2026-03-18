@@ -3,6 +3,7 @@
   "configurations": [
     {
       "name": "stackchan-firmware",
+      "compileCommands": "${workspaceFolder}/firmware/compile_commands.json",
       "includePath": [
         "${workspaceFolder}/firmware",
         "${workspaceFolder}/firmware/include",
@@ -31,7 +32,7 @@
       "compilerPath": "/home/rihow/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-g++",
       "cStandard": "c17",
       "cppStandard": "c++17",
-      "intelliSenseMode": "linux-gcc-x64",
+      "intelliSenseMode": "linux-gcc-arm",
       "browse": {
         "path": [
           "${workspaceFolder}/firmware",

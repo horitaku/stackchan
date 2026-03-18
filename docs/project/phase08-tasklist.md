@@ -25,7 +25,7 @@
 | P8-14 | tts.chunk を音声フレーム単位へ再設計する | `stream_id` / `chunk_index` / `sent_at or playout_ts` / `frame_duration_ms` / `samples_per_chunk` を含む payload 定義、schema、互換性メモ | 中 | 現在の固定 byte 分割では低遅延再生と欠落検知に不向きなため | Done |
 | P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Done |
 | P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Done |
-| P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Planned |
+| P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Done |
 | P8-18 | Voicevox TTS の downlink を Opus 化し firmware でデコード再生する | server で PCM/WAV -> Opus フレーム化、`tts.chunk` で Opus 配信、firmware で Opus デコード再生、互換 fallback、検証手順 | 中 | 帯域削減と jitter 耐性を強化し、低遅延会話での再生安定性を高めるため | Planned |
 
 ## 2.1 実行メモ（2026-03-15）
@@ -146,6 +146,64 @@
 - 補足:
   - 現 transport は WebSocket/TCP なので、初期優先度は FEC よりも sequence/timestamp と事前バッファです。
   - browser/WebUI 側の AudioWorklet 相当の議論は、firmware では「通信受信と再生消費の分離タスク化」に読み替えて扱います。
+
+## 2.20 P8-17 受信・消費の責務分離メモ（2026-03-18）
+
+### 目的と背景
+
+- 現状: `loop()` 内の受信フロー（`_ws.loop()` → `enqueueTTSFrame()`）と消費フロー（`processTTSPlaybackQueue()` → `playPCM16()`）が同一ステップで実行
+- 課題: 受信ジッターが再生フロー全体に直接影響し、低遅延化時に bottleneck になる
+- **改善**: Producer-Consumer パターン採用で責務を明確化し、将来の低遅延実装の土台を整備
+
+### firmware 側の修正（session.h / session.cpp）
+
+#### 1. loop() の責務を明確化（コメント追加）
+- **3 つの処理フェーズを視覚的に分離**:
+  - Producer フロー（受信）: `_ws.loop()` で WebSocket フレーム受信 → `onTextMessage()` で `enqueueTTSFrame()` 呼び出し（ノンブロッキング）
+  - Consumer フロー（消費）: `processTTSPlaybackQueue()` でキュー → 再生
+  - Display フロー（表示）: `updateAvatarFace()` で口パク・表情更新
+
+#### 2. enqueueTTSFrame() にコメント追加
+- **Producer ハンドラとして明確化**: WebSocket 受信時に呼ばれ、base64 フレームをキューに積む（デコード遅延）
+- ノンブロッキング実行を前提に、処理時間を最小化
+
+#### 3. processTTSPlaybackQueue() に Observability 強化
+- **Watermark 監視の詳細ログ追加**:
+  - `prebuffer ready`: 再生開始前の事前バッファ達成時
+  - `low-water`: バッファが 60ms 以下に低下時（ネットワーク遅延や受信ジッター検知）
+  - `playback batch`: dequeue 後のキュー状態スナップショット（`buffered_after_dequeue_ms`、`frames_remaining`）
+- ログ形式:
+  ```
+  [TTS][watermark] low-water request_id=... buffered_ms=50 threshold_ms=60 frames_in_queue=2
+  [TTS][playback] batch_duration_ms=40 batch_bytes=1280 buffered_after_dequeue_ms=40 frames_remaining=1
+  ```
+- これにより、受信速度と消費速度の関係を外部から監視可能に
+
+#### 4. session.h のファイルコメント更新
+- **@section P8-17 セクション追加**: Producer-Consumer パターンの設計意図を文書化
+
+### 検証結果
+
+- `pio run -e stackchan_cores3` 成功
+  - RAM 使用率: 15.3%（メモリ増加なし）
+  - Flash 使用率: 16.6%（コード量増加なし）
+- **後方互換性**: 既存のリングバッファ機能（P8-15）と欠落補完（P8-16）を完全に保持
+
+### 設計の特徴
+
+| 観点 | 効果 |
+|------|------|
+| **責務分離** | 受信と消費の処理経路を明確化 → 意図的な設計変更・最適化が容易 |
+| **Observability** | バッファ watermark をログ出力 → ネットワーク揺らぎを定量的に監視 |
+| **Futures** | Producer-Consumer パターンは FreeRTOS マルチタスク化の前提条件（P9 対応時） |
+| **リスク** | 最小限のコメント追加のみ → 実装ロジック変更なしで破壊リスク低い |
+
+### 次段階への引き継ぎ（Phase 2）
+
+P8-18 以降で活用する予定の項目：
+- `_runtimeMetrics` への watermark 状態記録（`GET /api/runtime/overview` に反映）
+- high-water ドロップ検知時の server への backpressure 信号（初期案）
+- lip sync の on-demand 化（80ms 周期制限 → 消費タイミング同期）
 
 ## 2.10 P8-04 runtime_metrics 永続化メモ（2026-03-17）
 

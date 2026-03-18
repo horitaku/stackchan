@@ -44,6 +44,7 @@
 | 6 | 再生とアバター同期 | TTS 再生連携と簡易リップシンク | デバイスが発話し、状態反映できる |
 | 7 | WebUI と可観測性 | 設定 UI、診断、ランタイム可視化 | 運用者がシステムの確認とテストを実施できる |
 | 8 | 統合と運用 | Docker、マイグレーション、CI、障害復旧強化 | 開発運用と実行運用が再現可能である |
+| 9 | LLM 実装と会話コンテキスト統合 | OpenAI Chat Completions、Persona 設定、会話履歴管理、LLM テスト導線 | OpenAI LLM が応答し、UI から Persona 設定可能である |
 
 ## 5. フェーズ詳細
 
@@ -118,6 +119,16 @@
 - CI チェックと統合テスト実行を追加します。
 - リトライ、タイムアウト、縮退モード挙動を強化します。
 - 実行タスクは docs/project/phase08-tasklist.md で管理します。
+
+### フェーズ 9. LLM 実装と会話コンテキスト統合
+
+- OpenAI Chat Completions API による実 LLM 統合を実装します。
+- Session 内の会話履歴（utterances）を context window として管理します。
+- UI から Persona / System Prompt を動的に変更可能にします。
+- LLM レイテンシとトークン使用量を計測・可視化します。
+- WebUI から LLM 単体テストと Stackchan 連携テストを実行可能にします。
+- LLM 関連の障害復旧ランブックを追加します。
+- 実行タスクは docs/project/phase09-tasklist.md で管理します。
 
 ## 6. PDCA 運用モデル
 

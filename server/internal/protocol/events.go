@@ -68,3 +68,14 @@ type MotionPlayPayload struct {
 	Motion    string  `json:"motion"`
 	Speed     float64 `json:"speed,omitempty"`
 }
+// TTSBufferWatermarkPayload は tts.buffer.watermark イベントのペイロードです（firmware -> server）。
+// P8-19: TTS 再生バッファの watermark 状態変化を server へ通知します。
+// status が変化した時点のみ送信し、同一状態での再送は 500ms 以上間隔を空けます。
+type TTSBufferWatermarkPayload struct {
+        RequestID    string `json:"request_id"`
+        StreamID     string `json:"stream_id"`
+        Status       string `json:"status"`        // "normal" | "low_water" | "high_water"
+        BufferedMs   int    `json:"buffered_ms"`   // 現在のバッファ深さ（ms）
+        ThresholdMs  int    `json:"threshold_ms"`  // 発火した watermark 閾値（ms）
+        FramesInQueue int   `json:"frames_in_queue"` // キュー内フレーム数
+}

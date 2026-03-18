@@ -371,6 +371,27 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			h.runtimeState.OnAvatarMotion(payload.Motion)
 		}
 
+	case "tts.buffer.watermark":
+		// P8-19: firmware からの TTS バッファ watermark 状態通知を受信します。
+		// runtime_state に記録し、WebUI Overview で可視化します。
+		var wmPayload protocol.TTSBufferWatermarkPayload
+		if err := json.Unmarshal(env.Payload, &wmPayload); err != nil {
+			log.Warn().Err(err).Msg("failed to parse tts.buffer.watermark payload")
+			return false
+		}
+		if wmPayload.RequestID == "" || wmPayload.StreamID == "" || wmPayload.Status == "" {
+			log.Warn().Msg("tts.buffer.watermark payload is missing required fields")
+			return false
+		}
+		h.runtimeState.OnTTSWatermark(
+			wmPayload.RequestID,
+			wmPayload.StreamID,
+			wmPayload.Status,
+			wmPayload.BufferedMs,
+			wmPayload.ThresholdMs,
+			wmPayload.FramesInQueue,
+		)
+
 	default:
 		log.Warn().Str("type", env.Type).Msg("unhandled event type")
 	}

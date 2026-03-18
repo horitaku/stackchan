@@ -50,6 +50,8 @@ type PipelineSnapshot struct {
 	FirstFrameLatencyMs int64  `json:"first_frame_latency_ms"`
 	CadenceJitterMs     int64  `json:"cadence_jitter_ms"`
 	E2ELatencyMs        int64  `json:"e2e_latency_ms"`
+	// P8-16: tts.chunk 送信失敗の累積カウント（downlink 配信異常の検知指標）
+	TTSChunkSendFailCount int `json:"tts_chunk_send_fail_count"`
 }
 
 // AvatarSnapshot はアバター同期の状態です。
@@ -247,6 +249,23 @@ func (s *RuntimeState) OnOutputError() {
 	store := s.metricsStore
 	metrics := []RuntimeMetricWrite{
 		{SessionID: sessionID, RequestID: requestID, MetricName: "playback.output_error_count", MetricValue: float64(s.snapshot.Playback.OutputErrorCount), MetricUnit: "count", ObservedAt: now},
+	}
+	s.mu.Unlock()
+	s.persistMetrics(store, metrics)
+}
+
+// OnTTSChunkSendFail は tts.chunk 送信失敗を記録します（P8-16 downlink 欠落検知指標）。
+func (s *RuntimeState) OnTTSChunkSendFail(requestID, streamID string) {
+	now := time.Now().UTC()
+	s.mu.Lock()
+	sessionID := s.snapshot.Connection.SessionID
+	s.snapshot.Pipeline.RequestID = requestID
+	s.snapshot.Pipeline.StreamID = streamID
+	s.snapshot.Pipeline.TTSChunkSendFailCount++
+	s.touchLocked()
+	store := s.metricsStore
+	metrics := []RuntimeMetricWrite{
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.tts_chunk_send_fail_count", MetricValue: float64(s.snapshot.Pipeline.TTSChunkSendFailCount), MetricUnit: "count", ObservedAt: now},
 	}
 	s.mu.Unlock()
 	s.persistMetrics(store, metrics)

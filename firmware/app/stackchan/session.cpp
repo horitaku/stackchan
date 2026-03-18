@@ -86,15 +86,37 @@ void StackchanSession::loop() {
     return;
   }
 
-  // WebSocket のループ処理（自動再接続もここで実行されます）
+  // ┌─────────────────────────────────────────────────────────────────────────┐
+  // │ P8-17: 受信・消費・表示の責務分離（Producer-Consumer pattern）          │
+  // ├─────────────────────────────────────────────────────────────────────────┤
+  // │ Producer（受信側）: _ws.loop()                                         │
+  // │   → onTextMessage() → enqueueTTSFrame() で frame を enqueue            │
+  // │   → Non-blocking: フレーム受信をキューに積み込むのみ                  │
+  // │                                                                         │
+  // │ Consumer（消費側）: processTTSPlaybackQueue()                          │
+  // │   → キューから dequeue → 40ms 分を集約 → playPCM16() で再生          │
+  // │   → キュー watermark 監視（prebuffer / low-water / high-water）       │
+  // │   → observability: バッファ深さ、滞留時間をログ出力                   │
+  // │                                                                         │
+  // │ 効果: 受信遅延が再生に直接影響しない → より安定したストリーミング      │
+  // └─────────────────────────────────────────────────────────────────────────┘
+
+  // ── Producer: WebSocket ノンブロッキング受信 ──────────────────────────────
+  // 受信フレーム到達時に自動的に onTextMessage() → enqueueTTSFrame() が実行されます
   _ws.loop();
 
-  // TTS 再生状態を更新します。
+  // ── TTS 再生状態の更新 ────────────────────────────────────────────
   _ttsPlayer.update();
+
+  // ── Consumer: キューから消費・再生 ────────────────────────────────────
+  // processTTSPlaybackQueue() はキュー監視・watermark チェック・dequeue を担当します
+  // 受信フロー（producer）と分離されているため、互いに独立して進捗できます
   processTTSPlaybackQueue();
+
+  // ── Display: 口パク同期・顔表情更新 ────────────────────────────────────
   updateAvatarFace();
 
-  // speaking -> idle 遷移を再生状態から検知します。
+  // ── 状態遷移: speaking -> idle の検知 ────────────────────────────────────
   const Audio::PlaybackState nowPlaybackState = _ttsPlayer.state();
   if (_lastPlaybackState == Audio::PlaybackState::Playing &&
       nowPlaybackState == Audio::PlaybackState::Idle &&
@@ -103,7 +125,7 @@ void StackchanSession::loop() {
   }
   _lastPlaybackState = nowPlaybackState;
 
-  // Active 状態でのみ heartbeat を定期送信します
+  // ── 定期送信: heartbeat（Active 状態のみ） ────────────────────────────
   if (_state == SessionState::Active) {
     if (millis() - _lastHeartbeatMs >= _heartbeatIntervalMs) {
       sendHeartbeat();
@@ -861,6 +883,12 @@ bool StackchanSession::enqueueTTSFrame(const String& requestId,                 
                                        int frameDurationMs,
                                        int samplesPerChunk,
                                        const String& audioBase64) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // [Producer: TTS フレーム受信ハンドラ]
+  // P8-17: WebSocket 受信イベントからの呼び出し
+  //  → このメソッドはノンブロッキングで実行され、キューに frame を enqueue するのみ
+  //  → base64 デコードは Consumer フロー（processTTSPlaybackQueue）で後行
+  // ─────────────────────────────────────────────────────────────────────────
   if (requestId.length() == 0 ||
       streamId.length() == 0 ||
       chunkIndex < 0 ||
@@ -1034,6 +1062,10 @@ bool StackchanSession::dequeueTTSPlaybackBatch(uint16_t targetDurationMs,
 }
 
 void StackchanSession::processTTSPlaybackQueue() {
+  // ─────────────────────────────────────────────────────────────────────────
+  // [キュー終端処理]
+  // ストリームが終了し、すべてのフレームが消費された場合をクリーンアップします。
+  // ─────────────────────────────────────────────────────────────────────────
   if (_ttsFrameCount == 0) {
     if (_ttsStreamEnded && _ttsPlayer.state() == Audio::PlaybackState::Idle) {
       // P8-16: ストリーム終端で concealment メトリクスをログ出力します。
@@ -1052,11 +1084,16 @@ void StackchanSession::processTTSPlaybackQueue() {
     return;
   }
 
+  // 再生中の場合はスキップ（前フレームの再生完了を待ちます）
   if (_ttsPlayer.state() != Audio::PlaybackState::Idle) {
     return;
   }
 
-  // 事前バッファが規定値に到達するまでは再生を開始しません。
+  // ─────────────────────────────────────────────────────────────────────────
+  // [事前バッファ制御]
+  // ストリーム開始前に最小限のバッファレベル(prebuffer_start = 80ms)に達するまで
+  // 再生開始を遅延させ、受信ジッターに対する耐性を強化します（P8-15）。
+  // ─────────────────────────────────────────────────────────────────────────
   if (!_ttsPlaybackPrimed) {
     if (_ttsBufferedMs < kTTSPrebufferStartMs && !_ttsStreamEnded) {
       return;
@@ -1068,13 +1105,26 @@ void StackchanSession::processTTSPlaybackQueue() {
       static_cast<unsigned>(kTTSPrebufferStartMs));
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // [Watermark 監視]
+  // P8-17: キューの深さが watermark 閾値を超える状況をログ出力し、
+  // ネットワーク揺らぎやデコード遅延が再生に與える影響を可視化します。
+  // ─────────────────────────────────────────────────────────────────────────
   if (_ttsBufferedMs < kTTSLowWaterMs && !_ttsStreamEnded) {
-    Serial.printf("[TTS] low-water request_id=%s buffered_ms=%u threshold_ms=%u\n",
+    // low-water 警告: バッファが枯渇に近い状態
+    // 原因: 受信フレーム到着遅延、デコード重い処理、ネットワーク遅延など
+    Serial.printf("[TTS][watermark] low-water request_id=%s buffered_ms=%u threshold_ms=%u frames_in_queue=%u\n",
       _ttsStreamRequestId.c_str(),
       static_cast<unsigned>(_ttsBufferedMs),
-      static_cast<unsigned>(kTTSLowWaterMs));
+      static_cast<unsigned>(kTTSLowWaterMs),
+      static_cast<unsigned>(_ttsFrameCount));
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // [消費フロー: dequeue → 再生]
+  // dequeueTTSPlaybackBatch() でキューから 40ms ぶんのフレームを集約し、
+  // 1 回の playPCM16() で再生開始します。
+  // ─────────────────────────────────────────────────────────────────────────
   uint8_t* mergedBytes = nullptr;
   size_t mergedLen = 0;
   uint16_t mergedDurationMs = 0;
@@ -1097,7 +1147,9 @@ void StackchanSession::processTTSPlaybackQueue() {
     setConversationState(ConversationState::Speaking, "tts stream playback started");
   }
 
-  Serial.printf("[TTS] request_id=%s playback batch started duration_ms=%u bytes=%u buffered_ms=%u frames_left=%u\n",
+  // P8-17: キュー状態のスナップショットを出力（observability 強化）
+  // これにより、受信速度と消費速度の関係を外部から監視可能にします。
+  Serial.printf("[TTS][playback] request_id=%s batch_duration_ms=%u batch_bytes=%u buffered_after_dequeue_ms=%u frames_remaining=%u\n",
     _ttsStreamRequestId.c_str(),
     static_cast<unsigned>(mergedDurationMs),
     static_cast<unsigned>(mergedLen),

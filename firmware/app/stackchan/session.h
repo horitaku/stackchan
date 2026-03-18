@@ -1,6 +1,6 @@
 /**
  * @file session.h
- * @brief Stackchan セッション・オーケストレーションクラス
+ * @brief Stackchan セッション・オーケストレーション クラス
  * 
  * Wi-Fi → WebSocket → session.hello/welcome → heartbeat → audio 送信 の
  * 一連のフローを管理するステートマシンです。
@@ -11,6 +11,22 @@
  * セッション状態遷移:
  *   Idle → ConnectingWiFi → ConnectingWS → Handshaking → Active
  *                ↑__________________________↑  （切断時に再接続）
+ * 
+ * @section P8-17 受信・消費の責務分離（Producer-Consumer Pattern）
+ * 
+ * TTS 再生パイプラインは以下の役割分担で実装されています：
+ * 
+ * - **Producer（受信側）**: onTextMessage() → enqueueTTSFrame()
+ *   - WebSocket 受信フレームをキューに enqueue（ノンブロッキング）
+ *   - 受信遅延が再生フロー全体に与える影響を最小化
+ * 
+ * - **Consumer（消費側）**: processTTSPlaybackQueue()
+ *   - キューから dequeue → 40ms 分を集約 → playPCM16() で再生
+ *   - Watermark 監視（prebuffer / low-water / high-water）
+ *   - バッファ深さと滞留時間をログ出力（observability 強化）
+ * 
+ * この分離により、受信ジッターと再生ジッターの因果関係を弱め、
+ * 将来の低遅延会話実装の土台を整えます（P9以降で活用予定）。
  */
 #pragma once
 
@@ -64,6 +80,11 @@ class StackchanSession {
 
   /**
    * @brief メインループ処理。loop() 内で毎フレーム呼び出します。
+   * 
+   * P8-17 で責務を明確化：
+   * - Producer フロー: _ws.loop() で受信フレーム → enqueueTTSFrame() で enqueue
+   * - Consumer フロー: processTTSPlaybackQueue() で dequeue → 再生
+   * - 受信と消費の分離により、互いに独立した進捗が可能
    */
   void loop();
 
@@ -113,11 +134,12 @@ class StackchanSession {
   String _incomingTTSRequestId{""};
 
   // P8-15: 事前バッファ付き再生キュー（low-water / high-water 管理）
+  // P8-17: Consumer フロー専用のリングバッファ
   static constexpr size_t kTTSFrameQueueCapacity = 32;
-  static constexpr uint16_t kTTSPrebufferStartMs = 80;
-  static constexpr uint16_t kTTSLowWaterMs = 60;
-  static constexpr uint16_t kTTSHighWaterMs = 240;
-  static constexpr uint16_t kTTSPlaybackBatchMs = 40;
+  static constexpr uint16_t kTTSPrebufferStartMs = 80;   ///< 再生開始前の最小バッファ
+  static constexpr uint16_t kTTSLowWaterMs = 60;         ///< 警告レベル
+  static constexpr uint16_t kTTSHighWaterMs = 240;       ///< ドロップレベル
+  static constexpr uint16_t kTTSPlaybackBatchMs = 40;    ///< 1 回の再生バッチ長
 
   struct TTSFrameSlot {
     uint8_t* bytes{nullptr};

@@ -384,7 +384,64 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 		return fmt.Errorf("failed to decode tts audio base64 for chunking: %w", err)
 	}
 
+	effectiveCodec := strings.TrimSpace(strings.ToLower(codec))
+	if effectiveCodec == "" {
+		effectiveCodec = "pcm"
+	}
+
 	if chunkVersion == "1.1" {
+		if effectiveCodec == "opus" {
+			opusPackets, opusSampleRateHz, convErr := audio.EncodeWAVToOpusPackets(context.Background(), audioBytes, audio.OpusDownlinkOptions{
+				SampleRateHz:    16000,
+				BitrateBps:      24000,
+				FrameDurationMs: ttsChunkFrameDurationMsV11,
+			})
+			if convErr == nil {
+				streamID := fmt.Sprintf("tts-%s", requestID)
+				samplesPerFrame := (opusSampleRateHz * ttsChunkFrameDurationMsV11) / 1000
+				if samplesPerFrame <= 0 {
+					samplesPerFrame = 320
+				}
+
+				totalChunks := len(opusPackets)
+				for index, packet := range opusPackets {
+					payload := protocol.TTSChunkPayloadV11{
+						RequestID:       requestID,
+						StreamID:        streamID,
+						ChunkIndex:      index,
+						FrameDurationMs: ttsChunkFrameDurationMsV11,
+						SamplesPerChunk: samplesPerFrame,
+						Codec:           "opus",
+						SentAt:          time.Now().UTC().Format(time.RFC3339),
+						AudioBase64:     base64.StdEncoding.EncodeToString(packet),
+					}
+					if err := h.sendEventWithVersion(conn, s, "tts.chunk", payload, "1.1"); err != nil {
+						h.runtimeState.OnTTSChunkSendFail(requestID, streamID)
+						return err
+					}
+
+					if index >= (ttsChunkV11PrebufferFrames-1) && index < totalChunks-1 {
+						time.Sleep(time.Duration(ttsChunkFrameDurationMsV11) * time.Millisecond)
+					}
+				}
+
+				ttsPayload := protocol.TTSEndPayload{
+					RequestID:    requestID,
+					DurationMs:   durationMs,
+					SampleRateHz: opusSampleRateHz,
+					Codec:        "opus",
+					TotalChunks:  totalChunks,
+				}
+				if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
+					return err
+				}
+				return nil
+			}
+
+			logging.Logger.Warn().Err(convErr).Str("request_id", requestID).Msg("opus downlink conversion failed, fallback to pcm")
+			effectiveCodec = "pcm"
+		}
+
 		streamID := fmt.Sprintf("tts-%s", requestID)
 		samplesPerFrame := (sampleRateHz * ttsChunkFrameDurationMsV11) / 1000
 		if samplesPerFrame <= 0 {
@@ -414,6 +471,7 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 				ChunkIndex:      index,
 				FrameDurationMs: ttsChunkFrameDurationMsV11,
 				SamplesPerChunk: samplesPerFrame,
+				Codec:           effectiveCodec,
 				SentAt:          time.Now().UTC().Format(time.RFC3339),
 				AudioBase64:     base64.StdEncoding.EncodeToString(frame),
 			}
@@ -433,7 +491,7 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 			RequestID:    requestID,
 			DurationMs:   durationMs,
 			SampleRateHz: sampleRateHz,
-			Codec:        codec,
+			Codec:        effectiveCodec,
 			TotalChunks:  totalChunks,
 		}
 		if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
@@ -470,7 +528,7 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 		RequestID:    requestID,
 		DurationMs:   durationMs,
 		SampleRateHz: sampleRateHz,
-		Codec:        codec,
+		Codec:        effectiveCodec,
 		TotalChunks:  totalChunks,
 	}
 	if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {

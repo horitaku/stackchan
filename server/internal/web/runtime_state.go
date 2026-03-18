@@ -52,6 +52,11 @@ type PipelineSnapshot struct {
 	E2ELatencyMs        int64  `json:"e2e_latency_ms"`
 	// P8-16: tts.chunk 送信失敗の累積カウント（downlink 配信異常の検知指標）
 	TTSChunkSendFailCount int `json:"tts_chunk_send_fail_count"`
+	// P8-19: TTS バッファ watermark 統計
+	TTSWatermarkStatus        string `json:"tts_watermark_status"`          // "normal" | "low_water" | "high_water"
+	TTSBufferedMs             int    `json:"tts_buffered_ms"`               // 最新バッファ深さ（ms）
+	TTSLowWaterCount          int    `json:"tts_low_water_count"`           // low-water 累積カウント
+	TTSHighWaterDropCount      int    `json:"tts_high_water_drop_count"`    // high-water ドロップ累積カウント
 }
 
 // AvatarSnapshot はアバター同期の状態です。
@@ -269,6 +274,46 @@ func (s *RuntimeState) OnTTSChunkSendFail(requestID, streamID string) {
 	}
 	s.mu.Unlock()
 	s.persistMetrics(store, metrics)
+}
+
+// OnTTSWatermark は firmware から通知された TTS バッファ watermark 状態変化を記録します（P8-19）。
+// status: "normal" | "low_water" | "high_water"
+func (s *RuntimeState) OnTTSWatermark(requestID, streamID, status string, bufferedMs, thresholdMs, framesInQueue int) {
+	now := time.Now().UTC()
+	s.mu.Lock()
+	sessionID := s.snapshot.Connection.SessionID
+	s.snapshot.Pipeline.RequestID = requestID
+	s.snapshot.Pipeline.StreamID = streamID
+	s.snapshot.Pipeline.TTSWatermarkStatus = status
+	s.snapshot.Pipeline.TTSBufferedMs = bufferedMs
+	switch status {
+	case "low_water":
+		s.snapshot.Pipeline.TTSLowWaterCount++
+	case "high_water":
+		s.snapshot.Pipeline.TTSHighWaterDropCount++
+	}
+	s.touchLocked()
+	store := s.metricsStore
+	lowWaterCount := s.snapshot.Pipeline.TTSLowWaterCount
+	highWaterDropCount := s.snapshot.Pipeline.TTSHighWaterDropCount
+	s.mu.Unlock()
+	s.persistMetrics(store, []RuntimeMetricWrite{
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.tts_buffer_watermark_status", MetricValue: 0, MetricUnit: "enum:" + status, ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.tts_buffered_ms", MetricValue: float64(bufferedMs), MetricUnit: "ms", ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.tts_low_water_count", MetricValue: float64(lowWaterCount), MetricUnit: "count", ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.tts_high_water_drop_count", MetricValue: float64(highWaterDropCount), MetricUnit: "count", ObservedAt: now},
+	})
+	logging.Logger.Debug().
+		Str("session_id", sessionID).
+		Str("request_id", requestID).
+		Str("stream_id", streamID).
+		Str("status", status).
+		Int("buffered_ms", bufferedMs).
+		Int("threshold_ms", thresholdMs).
+		Int("frames_in_queue", framesInQueue).
+		Int("low_water_count", lowWaterCount).
+		Int("high_water_drop_count", highWaterDropCount).
+		Msg("tts buffer watermark received")
 }
 
 func (s *RuntimeState) OnAvatarExpression(expression string) {

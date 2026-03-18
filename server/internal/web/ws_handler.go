@@ -3,10 +3,11 @@
 package web
 
 import (
-	"encoding/base64"
 	"context"
-	"fmt"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/horitaku/stackchan/server/internal/audio"
 	"github.com/horitaku/stackchan/server/internal/conversation"
 	"github.com/horitaku/stackchan/server/internal/logging"
 	"github.com/horitaku/stackchan/server/internal/protocol"
@@ -39,6 +41,8 @@ type WSHandler struct {
 }
 
 const ttsChunkByteSize = 512
+const ttsChunkFrameDurationMsV11 = 20
+const ttsChunkV11PrebufferFrames = 4
 
 type audioChunkPayload struct {
 	StreamID        string `json:"stream_id"`
@@ -221,6 +225,10 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, "audio.stream_open payload is invalid", false, &env.Type, &env.Sequence)
 			return false
 		}
+		if err := audio.ValidateCodec(payload.Codec); err != nil {
+			h.writeError(conn, s, protocol.ErrCodeInvalidPayload, err.Error(), false, &env.Type, &env.Sequence)
+			return false
+		}
 		s.RegisterBinaryStream(payload.StreamID, session.BinaryStreamMeta{
 			Codec:           payload.Codec,
 			SampleRateHz:    payload.SampleRateHz,
@@ -264,6 +272,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			return false
 		}
 		if h.orchestrator != nil {
+			streamMeta, _ := s.GetBinaryStreamMeta(payload.StreamID)
 			chunks, firstChunkAt := s.ConsumeAudioStream(payload.StreamID)
 			// 空ストリームチェック: チャンク受信前に audio.end が届いた場合はエラーです
 			if len(chunks) == 0 {
@@ -289,6 +298,27 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 				h.writeError(conn, s, code, message, retryable, &env.Type, &env.Sequence)
 				return false
 			}
+
+			firstFrameLatencyMs := int64(0)
+			cadenceJitterMs := int64(0)
+			e2eLatencyMs := int64(0)
+			if streamMeta != nil {
+				if !streamMeta.OpenedAt.IsZero() {
+					e2eLatencyMs = time.Since(streamMeta.OpenedAt).Milliseconds()
+				}
+				if !streamMeta.FirstFrameAt.IsZero() && !streamMeta.OpenedAt.IsZero() {
+					firstFrameLatencyMs = streamMeta.FirstFrameAt.Sub(streamMeta.OpenedAt).Milliseconds()
+				}
+				cadenceJitterMs = calculateCadenceJitterMs(chunks, streamMeta.FrameDurationMs)
+				h.runtimeState.OnOpusMetrics(result.RequestID, payload.StreamID, firstFrameLatencyMs, cadenceJitterMs, e2eLatencyMs)
+				log.Info().
+					Str("stream_id", payload.StreamID).
+					Str("request_id", result.RequestID).
+					Int64("first_frame_latency_ms", firstFrameLatencyMs).
+					Int64("cadence_jitter_ms", cadenceJitterMs).
+					Int64("e2e_latency_ms", e2eLatencyMs).
+					Msg("opus runtime metrics recorded")
+			}
 			h.runtimeState.OnPipeline(result.RequestID, payload.StreamID, queueWaitMs, result.STTLatencyMs, result.LLMLatencyMs, result.TTSLatencyMs, result.TotalLatencyMs)
 			h.runtimeState.OnPlaybackQueued(result.RequestID, result.TotalLatencyMs, result.TTSDuration)
 
@@ -303,7 +333,7 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 				return true // 送信失敗は致命的（接続クローズ）
 			}
 
-			if err := h.sendTTSAudio(conn, s, result.RequestID, result.TTSAudioBase64, result.TTSDuration, result.TTSSampleHz, "pcm"); err != nil {
+			if err := h.sendTTSAudio(conn, s, result.RequestID, result.TTSAudioBase64, result.TTSDuration, result.TTSSampleHz, "pcm", "1.0"); err != nil {
 				log.Error().Err(err).Msg("failed to send tts.end")
 				h.runtimeState.OnOutputError()
 				return true
@@ -341,6 +371,27 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			h.runtimeState.OnAvatarMotion(payload.Motion)
 		}
 
+	case "tts.buffer.watermark":
+		// P8-19: firmware からの TTS バッファ watermark 状態通知を受信します。
+		// runtime_state に記録し、WebUI Overview で可視化します。
+		var wmPayload protocol.TTSBufferWatermarkPayload
+		if err := json.Unmarshal(env.Payload, &wmPayload); err != nil {
+			log.Warn().Err(err).Msg("failed to parse tts.buffer.watermark payload")
+			return false
+		}
+		if wmPayload.RequestID == "" || wmPayload.StreamID == "" || wmPayload.Status == "" {
+			log.Warn().Msg("tts.buffer.watermark payload is missing required fields")
+			return false
+		}
+		h.runtimeState.OnTTSWatermark(
+			wmPayload.RequestID,
+			wmPayload.StreamID,
+			wmPayload.Status,
+			wmPayload.BufferedMs,
+			wmPayload.ThresholdMs,
+			wmPayload.FramesInQueue,
+		)
+
 	default:
 		log.Warn().Str("type", env.Type).Msg("unhandled event type")
 	}
@@ -348,10 +399,126 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 	return false
 }
 
-func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, requestID, audioBase64 string, durationMs, sampleRateHz int, codec string) error {
+func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, requestID, audioBase64 string, durationMs, sampleRateHz int, codec, chunkVersion string) error {
 	audioBytes, err := base64.StdEncoding.DecodeString(audioBase64)
 	if err != nil {
 		return fmt.Errorf("failed to decode tts audio base64 for chunking: %w", err)
+	}
+
+	effectiveCodec := strings.TrimSpace(strings.ToLower(codec))
+	if effectiveCodec == "" {
+		effectiveCodec = "pcm"
+	}
+
+	if chunkVersion == "1.1" {
+		if effectiveCodec == "opus" {
+			opusPackets, opusSampleRateHz, convErr := audio.EncodeWAVToOpusPackets(context.Background(), audioBytes, audio.OpusDownlinkOptions{
+				SampleRateHz:    16000,
+				BitrateBps:      24000,
+				FrameDurationMs: ttsChunkFrameDurationMsV11,
+			})
+			if convErr == nil {
+				streamID := fmt.Sprintf("tts-%s", requestID)
+				samplesPerFrame := (opusSampleRateHz * ttsChunkFrameDurationMsV11) / 1000
+				if samplesPerFrame <= 0 {
+					samplesPerFrame = 320
+				}
+
+				totalChunks := len(opusPackets)
+				for index, packet := range opusPackets {
+					payload := protocol.TTSChunkPayloadV11{
+						RequestID:       requestID,
+						StreamID:        streamID,
+						ChunkIndex:      index,
+						FrameDurationMs: ttsChunkFrameDurationMsV11,
+						SamplesPerChunk: samplesPerFrame,
+						Codec:           "opus",
+						SentAt:          time.Now().UTC().Format(time.RFC3339),
+						AudioBase64:     base64.StdEncoding.EncodeToString(packet),
+					}
+					if err := h.sendEventWithVersion(conn, s, "tts.chunk", payload, "1.1"); err != nil {
+						h.runtimeState.OnTTSChunkSendFail(requestID, streamID)
+						return err
+					}
+
+					if index >= (ttsChunkV11PrebufferFrames-1) && index < totalChunks-1 {
+						time.Sleep(time.Duration(ttsChunkFrameDurationMsV11) * time.Millisecond)
+					}
+				}
+
+				ttsPayload := protocol.TTSEndPayload{
+					RequestID:    requestID,
+					DurationMs:   durationMs,
+					SampleRateHz: opusSampleRateHz,
+					Codec:        "opus",
+					TotalChunks:  totalChunks,
+				}
+				if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
+					return err
+				}
+				return nil
+			}
+
+			logging.Logger.Warn().Err(convErr).Str("request_id", requestID).Msg("opus downlink conversion failed, fallback to pcm")
+			effectiveCodec = "pcm"
+		}
+
+		streamID := fmt.Sprintf("tts-%s", requestID)
+		samplesPerFrame := (sampleRateHz * ttsChunkFrameDurationMsV11) / 1000
+		if samplesPerFrame <= 0 {
+			samplesPerFrame = 320
+		}
+		frameBytes := samplesPerFrame * 2 // PCM16 mono
+		if frameBytes <= 0 {
+			frameBytes = 640
+		}
+
+		totalChunks := 0
+		if len(audioBytes) > 0 {
+			totalChunks = (len(audioBytes) + frameBytes - 1) / frameBytes
+		}
+
+		for index := 0; index < totalChunks; index++ {
+			start := index * frameBytes
+			end := start + frameBytes
+			if end > len(audioBytes) {
+				end = len(audioBytes)
+			}
+			frame := audioBytes[start:end]
+
+			payload := protocol.TTSChunkPayloadV11{
+				RequestID:       requestID,
+				StreamID:        streamID,
+				ChunkIndex:      index,
+				FrameDurationMs: ttsChunkFrameDurationMsV11,
+				SamplesPerChunk: samplesPerFrame,
+				Codec:           effectiveCodec,
+				SentAt:          time.Now().UTC().Format(time.RFC3339),
+				AudioBase64:     base64.StdEncoding.EncodeToString(frame),
+			}
+			if err := h.sendEventWithVersion(conn, s, "tts.chunk", payload, "1.1"); err != nil {
+				// P8-16: chunk 送信失敗を downlink 欠落の運用メトリクスとして記録します。
+				h.runtimeState.OnTTSChunkSendFail(requestID, streamID)
+				return err
+			}
+
+			// firmware 側の事前バッファが枯渇しないよう、初期バースト後はフレーム間隔で送信します。
+			if index >= (ttsChunkV11PrebufferFrames-1) && index < totalChunks-1 {
+				time.Sleep(time.Duration(ttsChunkFrameDurationMsV11) * time.Millisecond)
+			}
+		}
+
+		ttsPayload := protocol.TTSEndPayload{
+			RequestID:    requestID,
+			DurationMs:   durationMs,
+			SampleRateHz: sampleRateHz,
+			Codec:        effectiveCodec,
+			TotalChunks:  totalChunks,
+		}
+		if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	totalChunks := 0
@@ -372,6 +539,8 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 			AudioBase64: base64.StdEncoding.EncodeToString(audioBytes[start:end]),
 		}
 		if err := h.sendEvent(conn, s, "tts.chunk", payload); err != nil {
+			// P8-16: chunk 送信失敗を downlink 欠落の運用メトリクスとして記録します。
+			h.runtimeState.OnTTSChunkSendFail(requestID, "")
 			return err
 		}
 	}
@@ -380,7 +549,7 @@ func (h *WSHandler) sendTTSAudio(conn *websocket.Conn, s *session.Session, reque
 		RequestID:    requestID,
 		DurationMs:   durationMs,
 		SampleRateHz: sampleRateHz,
-		Codec:        codec,
+		Codec:        effectiveCodec,
 		TotalChunks:  totalChunks,
 	}
 	if err := h.sendEvent(conn, s, "tts.end", ttsPayload); err != nil {
@@ -422,20 +591,31 @@ func (h *WSHandler) writeError(
 // BuildJSONMessage は任意の型を JSON エンベロープにシリアライズして返します。
 // テストや他のハンドラから利用します。
 func BuildJSONMessage(msgType, sessionID string, sequence int64, payload any) ([]byte, error) {
+	return BuildJSONMessageWithVersion(msgType, sessionID, sequence, payload, protocol.SupportedVersion)
+}
+
+func BuildJSONMessageWithVersion(msgType, sessionID string, sequence int64, payload any, version string) ([]byte, error) {
 	env, err := protocol.NewEnvelope(msgType, sessionID, sequence, payload)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(version) != "" {
+		env.Version = version
 	}
 	return json.Marshal(env)
 }
 
 // sendEvent は指定のイベントをオートインクリメントされた sequence 付きで WebSocket へ送信します。
 func (h *WSHandler) sendEvent(conn *websocket.Conn, s *session.Session, msgType string, payload any) error {
+	return h.sendEventWithVersion(conn, s, msgType, payload, protocol.SupportedVersion)
+}
+
+func (h *WSHandler) sendEventWithVersion(conn *websocket.Conn, s *session.Session, msgType string, payload any, version string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	seq := s.Sequence.NextOutbound()
-	data, err := BuildJSONMessage(msgType, s.ID, seq, payload)
+	data, err := BuildJSONMessageWithVersion(msgType, s.ID, seq, payload, version)
 	if err != nil {
 		return err
 	}
@@ -447,7 +627,7 @@ func (h *WSHandler) sendEvent(conn *websocket.Conn, s *session.Session, msgType 
 
 // SendTTSTestToActive は現在アクティブな handshaked セッションへ tts.end を送信します。
 // 連携テストで視認性を高めるため avatar.expression と motion.play も続けて送信します。
-func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationMs, sampleRateHz int, codec, expression, motion string) (string, error) {
+func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationMs, sampleRateHz int, codec, expression, motion, chunkVersion string) (string, error) {
 	h.mu.Lock()
 	sessionID := h.activeSessionID
 	conn := h.connections[sessionID]
@@ -469,7 +649,11 @@ func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationM
 		codec = "pcm"
 	}
 
-	if err := h.sendTTSAudio(conn, s, requestID, audioBase64, durationMs, sampleRateHz, codec); err != nil {
+	if strings.TrimSpace(chunkVersion) == "" {
+		chunkVersion = "1.0"
+	}
+
+	if err := h.sendTTSAudio(conn, s, requestID, audioBase64, durationMs, sampleRateHz, codec, chunkVersion); err != nil {
 		h.mu.Lock()
 		if h.activeSessionID == sessionID {
 			h.activeSessionID = ""
@@ -517,11 +701,104 @@ func (h *WSHandler) SendTTSTestToActive(requestID, audioBase64 string, durationM
 }
 
 // handleBinaryFrame はバイナリ WebSocket フレームを Session.AddBinaryAudioFrame 経由で処理します。
+//
 // フレームフォーマット: 先頭 36 バイト = stream_id、残り = 音声データ。
+//
+// P8-05: 以下の検証ログを記録します:
+//   - codec（stream メタから取得）
+//   - payload_bytes（音声データ部分のバイト数）
+//   - expected_bytes（PCM の場合のみ、サンプルレート・フレーム長から計算）
+//   - frame_index（ストリーム内の通し番号）
+//   - first_frame_latency_ms（audio.stream_open からの経過時間。P8-10 計測用）
 func (h *WSHandler) handleBinaryFrame(ctx context.Context, conn *websocket.Conn, s *session.Session, data []byte) {
 	log := logging.FromContext(ctx)
+
+	const uuidLen = 36
+
+	if len(data) < uuidLen {
+		log.Warn().
+			Int("frame_size", len(data)).
+			Int("minimum", uuidLen).
+			Msg("binary frame too short to contain stream_id")
+		h.writeError(conn, s, protocol.ErrCodeInvalidPayload,
+			fmt.Sprintf("binary frame too short: %d bytes", len(data)), false, nil, nil)
+		return
+	}
+
+	streamID := strings.TrimSpace(string(data[:uuidLen]))
+	payloadBytes := len(data) - uuidLen
+
+	if meta, ok := s.GetBinaryStreamMeta(streamID); ok {
+		expectedBytes := audio.ExpectedPCMFrameBytes(meta.Codec, meta.SampleRateHz, meta.FrameDurationMs, meta.ChannelCount)
+		if ok, warning := audio.ValidateFramePayload(meta.Codec, payloadBytes, expectedBytes); !ok {
+			log.Warn().
+				Str("stream_id", streamID).
+				Str("codec", meta.Codec).
+				Int("payload_bytes", payloadBytes).
+				Int("expected_bytes", expectedBytes).
+				Str("warning", warning).
+				Msg("binary frame: unexpected frame size")
+		}
+
+		if meta.NextChunkIndex == 0 && !meta.OpenedAt.IsZero() {
+			firstFrameLatencyMs := time.Since(meta.OpenedAt).Milliseconds()
+			log.Info().
+				Str("stream_id", streamID).
+				Str("codec", meta.Codec).
+				Int("payload_bytes", payloadBytes).
+				Int("expected_bytes", expectedBytes).
+				Int("frame_index", meta.NextChunkIndex).
+				Int64("first_frame_latency_ms", firstFrameLatencyMs).
+				Msg("binary frame: first frame received")
+		} else {
+			log.Debug().
+				Str("stream_id", streamID).
+				Str("codec", meta.Codec).
+				Int("payload_bytes", payloadBytes).
+				Int("frame_index", meta.NextChunkIndex).
+				Msg("binary frame received")
+		}
+	} else {
+		log.Warn().
+			Str("stream_id", streamID).
+			Int("payload_bytes", payloadBytes).
+			Msg("binary frame received before audio.stream_open")
+	}
+
 	if err := s.AddBinaryAudioFrame(data); err != nil {
-		log.Warn().Err(err).Int("frame_size", len(data)).Msg("failed to process binary frame")
+		log.Warn().
+			Err(err).
+			Str("stream_id", streamID).
+			Int("frame_size", len(data)).
+			Int("payload_bytes", payloadBytes).
+			Msg("failed to process binary frame")
 		h.writeError(conn, s, protocol.ErrCodeInvalidPayload, err.Error(), false, nil, nil)
 	}
+}
+
+func calculateCadenceJitterMs(chunks []providers.AudioChunk, expectedFrameDurationMs int) int64 {
+	if expectedFrameDurationMs <= 0 || len(chunks) < 2 {
+		return 0
+	}
+
+	expected := float64(expectedFrameDurationMs)
+	var sumAbsDelta float64
+	count := 0
+
+	for i := 1; i < len(chunks); i++ {
+		prevAt := chunks[i-1].ReceivedAt
+		currAt := chunks[i].ReceivedAt
+		if prevAt.IsZero() || currAt.IsZero() {
+			continue
+		}
+		intervalMs := currAt.Sub(prevAt).Seconds() * 1000.0
+		sumAbsDelta += math.Abs(intervalMs - expected)
+		count++
+	}
+
+	if count == 0 {
+		return 0
+	}
+
+	return int64(math.Round(sumAbsDelta / float64(count)))
 }

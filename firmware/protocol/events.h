@@ -22,6 +22,12 @@ constexpr const char* AUDIO_STREAM_OPEN  = "audio.stream_open";
 constexpr const char* AUDIO_CHUNK        = "audio.chunk";
 /// 音声ストリームの終端通知
 constexpr const char* AUDIO_END          = "audio.end";
+/// 音声ストリームの途中中断通知
+constexpr const char* AUDIO_STREAM_ABORT = "audio.stream_abort";
+/// 会話ターンの中断通知
+constexpr const char* CONVERSATION_CANCEL = "conversation.cancel";
+/// TTS バッファ watermark 状態変化通知（P8-19）
+constexpr const char* TTS_BUFFER_WATERMARK = "tts.buffer.watermark";
 
 // ── Server → Firmware ─────────────────────────────────────────────────
 /// セッション確立通知（heartbeat_interval_ms を含む）
@@ -32,6 +38,8 @@ constexpr const char* STT_FINAL          = "stt.final";
 constexpr const char* TTS_CHUNK          = "tts.chunk";
 /// TTS 合成完了：音声データと再生メタデータを通知する
 constexpr const char* TTS_END            = "tts.end";
+/// 再生中 TTS の即時停止を指示する
+constexpr const char* TTS_STOP           = "tts.stop";
 /// 表情状態を更新する
 constexpr const char* AVATAR_EXPRESSION  = "avatar.expression";
 /// モーション再生を指示する

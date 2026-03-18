@@ -1,13 +1,17 @@
 {
   "type": "tts.chunk",
-  "timestamp": "2026-03-15T12:00:06Z",
+  "timestamp": "2026-03-18T03:00:06Z",
   "session_id": "550e8400-e29b-41d4-a716-446655440000",
   "sequence": 3,
-  "version": "1.0",
+  "version": "1.1",
   "payload": {
-    "request_id": "stream-001",
+    "request_id": "request-001",
+    "stream_id": "tts-stream-001",
     "chunk_index": 0,
-    "total_chunks": 4,
+    "frame_duration_ms": 20,
+    "samples_per_chunk": 320,
+    "codec": "opus",
+    "sent_at": "2026-03-18T03:00:06Z",
     "audio_base64": "AAABAAIAAwAEAAUA"
   }
 }

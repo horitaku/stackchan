@@ -6,7 +6,16 @@
 - session.welcome.example.json
 - audio.chunk.example.json
 - audio.end.example.json
+- audio.stream_open.example.json
+- audio.stream_abort.example.json
 - error.invalid-sequence.example.json
+- stt.final.example.json
+- tts.chunk.example.json
+- tts.end.example.json
+- tts.stop.example.json
+- avatar.expression.example.json
+- motion.play.example.json
+- conversation.cancel.example.json
 
 注意:
 

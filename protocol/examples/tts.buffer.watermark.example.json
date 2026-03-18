@@ -1,0 +1,15 @@
+{
+  "type": "tts.buffer.watermark",
+  "timestamp": "2026-03-19T12:00:00Z",
+  "session_id": "sess_01HYZX9Q7P9G7D6XRZ9N4YQ0AZ",
+  "sequence": 57,
+  "version": "1.0",
+  "payload": {
+    "request_id": "req_abc123",
+    "stream_id": "stream_001",
+    "status": "low_water",
+    "buffered_ms": 40,
+    "threshold_ms": 60,
+    "frames_in_queue": 2
+  }
+}

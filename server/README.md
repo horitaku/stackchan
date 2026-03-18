@@ -69,6 +69,7 @@ server/
 - LOG_LEVEL: 既定値 info
 - WS_READ_TIMEOUT: 既定値 30
 - WS_WRITE_TIMEOUT: 既定値 30
+- VOICEVOX_HTTP_TIMEOUT_SEC: Voicevox API 呼び出しの HTTP タイムアウト秒（既定値 45）
 - CORS_ALLOWED_ORIGINS: カンマ区切り
 - PROVIDER_TIMEOUT_MS: provider 呼び出しタイムアウト（既定値 3000）
 - PROVIDER_MAX_ATTEMPTS: provider 呼び出し最大試行回数（既定値 2）

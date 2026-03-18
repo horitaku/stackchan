@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackchan.local/protocol/websocket/schemas/tts.buffer.watermark.schema.json",
+  "allOf": [
+    {
+      "$ref": "./envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "tts.buffer.watermark"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["request_id", "stream_id", "status", "buffered_ms", "threshold_ms", "frames_in_queue"],
+          "additionalProperties": false,
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "現在処理中の会話リクエスト ID"
+            },
+            "stream_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TTS ストリームの識別子"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["normal", "low_water", "high_water"],
+              "description": "バッファ watermark 状態 (low_water: 枯渇に近い / high_water: ドロップ発生 / normal: 正常復帰)"
+            },
+            "buffered_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "現在のバッファ深さ（ミリ秒）"
+            },
+            "threshold_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "水位閾値（ミリ秒）: low_water 閾値または high_water 閾値"
+            },
+            "frames_in_queue": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "キュー内の残フレーム数"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

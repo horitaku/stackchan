@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "tts.chunk",
-  "description": "TTS 合成音声を server から firmware へ分割送信するイベント",
+  "description": "TTS 合成音声を server から firmware へフレーム単位で送信するイベント",
   "type": "object",
   "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
   "properties": {
@@ -9,11 +9,33 @@
     "timestamp": { "type": "string", "format": "date-time" },
     "session_id": { "type": "string", "minLength": 1 },
     "sequence": { "type": "integer", "minimum": 1 },
-    "version": { "const": "1.0" },
-    "payload": { "$ref": "#/definitions/TTSChunkPayload" }
+    "version": { "enum": ["1.0", "1.1"] },
+    "payload": { "type": "object" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "version": { "const": "1.0" } }
+      },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/definitions/TTSChunkPayloadV10" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "version": { "const": "1.1" } }
+      },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/definitions/TTSChunkPayloadV11" }
+        }
+      }
+    }
+  ],
   "definitions": {
-    "TTSChunkPayload": {
+    "TTSChunkPayloadV10": {
       "type": "object",
       "required": ["request_id", "chunk_index", "total_chunks", "audio_base64"],
       "additionalProperties": false,
@@ -35,6 +57,70 @@
           "minLength": 1
         }
       }
+    },
+    "TTSChunkPayloadV11": {
+      "type": "object",
+      "required": ["request_id", "stream_id", "chunk_index", "frame_duration_ms", "samples_per_chunk", "audio_base64"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stream_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "同一 TTS ストリームを識別する ID"
+        },
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "ストリーム先頭からのフレーム番号"
+        },
+        "frame_duration_ms": {
+          "type": "integer",
+          "enum": [10, 20, 40, 60],
+          "description": "1 チャンクあたりのフレーム長（ms）"
+        },
+        "samples_per_chunk": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1 チャンクに含まれるサンプル数（1 チャンネル基準）"
+        },
+        "codec": {
+          "type": "string",
+          "enum": ["pcm", "opus"],
+          "description": "チャンクの音声コーデック。未指定時は pcm 扱い"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "server がチャンクを送信した時刻"
+        },
+        "playout_ts": {
+          "type": "string",
+          "format": "date-time",
+          "description": "firmware が再生すべき目標時刻"
+        },
+        "total_chunks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "旧実装互換の総チャンク数。v1.1 では非推奨"
+        },
+        "audio_base64": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Base64 エンコード済み音声フレーム"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["sent_at"]
+        },
+        {
+          "required": ["playout_ts"]
+        }
+      ]
     }
   }
 }

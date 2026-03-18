@@ -20,7 +20,9 @@ type BinaryStreamMeta struct {
 	SampleRateHz    int
 	FrameDurationMs int
 	ChannelCount    int
-	NextChunkIndex  int // バイナリフレームの自動採番カウンター
+	NextChunkIndex  int       // バイナリフレームの自動採番カウンター
+	OpenedAt        time.Time // audio.stream_open 受信時刻（P8-10 計測用）
+	FirstFrameAt    time.Time // 最初のバイナリフレーム受信時刻（P8-10 計測用）
 }
 
 // AddAudioChunk は stream_id ごとに受信チャンクを蓄積します。
@@ -33,9 +35,13 @@ func (s *Session) AddAudioChunk(chunk providers.AudioChunk) error {
 		s.AudioStreamFirstChunkAt = make(map[string]time.Time)
 	}
 
+	if chunk.ReceivedAt.IsZero() {
+		chunk.ReceivedAt = time.Now()
+	}
+
 	// 最初のチャンク受信時刻を記録します
 	if _, exists := s.AudioStreamFirstChunkAt[chunk.StreamID]; !exists {
-		s.AudioStreamFirstChunkAt[chunk.StreamID] = time.Now()
+		s.AudioStreamFirstChunkAt[chunk.StreamID] = chunk.ReceivedAt
 	}
 
 	// バッファ上限チェック
@@ -66,10 +72,13 @@ func (s *Session) ConsumeAudioStream(streamID string) ([]providers.AudioChunk, t
 }
 
 // RegisterBinaryStream は audio.stream_open で通知されたバイナリストリームのメタ情報を登録します。
+// OpenedAt に現在時刻を記録します（P8-10 の計測基点として使用）。
 func (s *Session) RegisterBinaryStream(streamID string, meta BinaryStreamMeta) {
 	if s.BinaryStreams == nil {
 		s.BinaryStreams = make(map[string]*BinaryStreamMeta)
 	}
+	// audio.stream_open 受信時刻を記録します
+	meta.OpenedAt = time.Now()
 	m := meta
 	s.BinaryStreams[streamID] = &m
 }
@@ -84,8 +93,12 @@ func (s *Session) GetBinaryStreamMeta(streamID string) (*BinaryStreamMeta, bool)
 }
 
 // AddBinaryAudioFrame はバイナリ WebSocket フレームを AudioChunk に変換してバッファに追加します。
+//
 // フレームフォーマット: 先頭 36 バイト = stream_id（UUID 文字列）、残りバイト = 音声データ。
 // audio.stream_open でストリームメタを事前登録しておくことが必要です。
+//
+// P8-05: 受信時刻（ReceivedAt）をチャンクに記録してレイテンシ計測に使用します。
+// P8-05: フレームサイズを期待値と照合して不一致を検知できるようにしています。
 func (s *Session) AddBinaryAudioFrame(frame []byte) error {
 	const uuidLen = 36
 	if len(frame) < uuidLen {
@@ -99,6 +112,11 @@ func (s *Session) AddBinaryAudioFrame(frame []byte) error {
 		return fmt.Errorf("no metadata for binary stream_id=%q: send audio.stream_open first", streamID)
 	}
 
+	// 最初のフレーム受信時刻を記録します（P8-10 の first_frame_latency 計測用）
+	if meta.FirstFrameAt.IsZero() {
+		meta.FirstFrameAt = time.Now()
+	}
+
 	chunkIndex := meta.NextChunkIndex
 	meta.NextChunkIndex++
 
@@ -110,5 +128,6 @@ func (s *Session) AddBinaryAudioFrame(frame []byte) error {
 		FrameDurationMs: meta.FrameDurationMs,
 		ChannelCount:    meta.ChannelCount,
 		DataBase64:      base64.StdEncoding.EncodeToString(audioData),
+		ReceivedAt:      time.Now(),
 	})
 }

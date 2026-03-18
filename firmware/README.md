@@ -218,3 +218,51 @@ firmware/
 
 - `surprised` は m5stack-avatar の都合で `Doubt` 表情へマッピングされます。
 - モーション演出（`nod`/`shake`）は顔回転を瞬間的に与え、次周期でニュートラル回転へ戻します。
+
+## 10. P8-09 最小確認（conversation 状態遷移）
+
+### 10.1 期待ログ
+
+`session.cpp` では次の形式で状態遷移ログを出力します。
+
+```text
+[Conversation] State: idle -> listening reason=audio capture started
+[Conversation] State: listening -> thinking reason=audio.end sent
+[Conversation] State: thinking -> speaking reason=tts.end playback started
+[Conversation] State: speaking -> idle reason=tts playback finished
+```
+
+割り込み時は次のように `interrupted` を経由して `idle` へ戻ります。
+
+```text
+[Conversation] State: speaking -> interrupted reason=tts.stop received
+[Conversation] State: interrupted -> idle reason=tts.stop applied
+```
+
+### 10.2 手動確認シナリオ
+
+1. firmware を起動し、`session.welcome` 受信後に `idle` であることを確認します。
+2. 画面タップで音声送信を開始し、`listening -> thinking` のログを確認します。
+3. サーバー応答で `tts.end` が到達したとき、`thinking -> speaking` を確認します。
+4. 再生完了後に `speaking -> idle` が出ることを確認します。
+5. 途中で割り込みイベントを送り、`interrupted -> idle` への遷移を確認します。
+
+### 10.3 割り込みイベント送信例（wscat）
+
+`conversation.cancel`:
+
+```json
+{"type":"conversation.cancel","timestamp":"2026-03-18T10:24:31Z","session_id":"<session_id>","sequence":42,"version":"1.0","payload":{"request_id":"req_001","reason":"user_interrupt","source":"touch"}}
+```
+
+`tts.stop`:
+
+```json
+{"type":"tts.stop","timestamp":"2026-03-18T10:24:32Z","session_id":"<session_id>","sequence":77,"version":"1.0","payload":{"request_id":"req_001","reason":"interrupted","clear_queue":true}}
+```
+
+`audio.stream_abort`:
+
+```json
+{"type":"audio.stream_abort","timestamp":"2026-03-18T10:24:33Z","session_id":"<session_id>","sequence":43,"version":"1.0","payload":{"stream_id":"stream_001","reason":"interrupted","final_chunk_index":8}}
+```

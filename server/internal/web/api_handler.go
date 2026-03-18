@@ -49,10 +49,12 @@ type VoicevoxUITestRequest struct {
 
 // VoicevoxStackchanTestRequest は WebUI から Stackchan 連携テストを実行する入力です。
 type VoicevoxStackchanTestRequest struct {
-	Text       string `json:"text"`
-	Speaker    int    `json:"speaker"`
-	Motion     string `json:"motion,omitempty"`
-	Expression string `json:"expression,omitempty"`
+	Text         string `json:"text"`
+	Speaker      int    `json:"speaker"`
+	Motion       string `json:"motion,omitempty"`
+	Expression   string `json:"expression,omitempty"`
+	Codec        string `json:"codec,omitempty"`
+	ChunkVersion string `json:"chunk_version,omitempty"`
 }
 
 type voicevoxSynthesisResult struct {
@@ -62,6 +64,16 @@ type voicevoxSynthesisResult struct {
 	AudioBase64 string
 	Bytes       int
 	LatencyMs   int64
+}
+
+func resolveVoicevoxHTTPTimeout() time.Duration {
+	timeoutSec := 45
+	if raw := strings.TrimSpace(os.Getenv("VOICEVOX_HTTP_TIMEOUT_SEC")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			timeoutSec = parsed
+		}
+	}
+	return time.Duration(timeoutSec) * time.Second
 }
 
 // NewAPIHandler は APIHandler を初期化します。
@@ -90,7 +102,7 @@ func NewAPIHandlerWithVoicevox(runtimeState *RuntimeState, settingsStore *Settin
 		settingsStore: settingsStore,
 		orchestrator:  orchestrator,
 		voicevoxBase:  trimmed,
-		httpClient:    &http.Client{Timeout: 15 * time.Second},
+		httpClient:    &http.Client{Timeout: resolveVoicevoxHTTPTimeout()},
 	}
 }
 
@@ -302,15 +314,36 @@ func (h *APIHandler) RunVoicevoxStackchanTest(c *gin.Context) {
 	if motion == "" {
 		motion = "nod"
 	}
+	chunkVersion := strings.TrimSpace(req.ChunkVersion)
+	if chunkVersion == "" {
+		chunkVersion = "1.1"
+	}
+	if chunkVersion != "1.0" && chunkVersion != "1.1" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chunk_version must be one of: 1.0, 1.1"})
+		return
+	}
+
+	codec := strings.ToLower(strings.TrimSpace(req.Codec))
+	if codec == "" {
+		codec = "opus"
+	}
+	if codec != "pcm" && codec != "opus" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "codec must be one of: pcm, opus"})
+		return
+	}
+	if codec == "opus" && chunkVersion != "1.1" {
+		chunkVersion = "1.1"
+	}
 
 	sessionID, err := h.wsHandler.SendTTSTestToActive(
 		requestID,
 		result.AudioBase64,
 		0,
 		24000,
-		"pcm",
+		codec,
 		expression,
 		motion,
+		chunkVersion,
 	)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -324,7 +357,9 @@ func (h *APIHandler) RunVoicevoxStackchanTest(c *gin.Context) {
 		"text":                result.Text,
 		"voicevox_bytes":      result.Bytes,
 		"voicevox_latency_ms": result.LatencyMs,
-		"sent_event":          "tts.end",
+		"sent_event":          "tts.chunk + tts.end",
+		"codec":               codec,
+		"chunk_version":       chunkVersion,
 		"expression":          expression,
 		"motion":              motion,
 	})
@@ -349,7 +384,7 @@ func (h *APIHandler) synthesizeVoicevox(ctx context.Context, req VoicevoxUITestR
 	start := time.Now()
 	queryResp, err := h.httpClient.Do(queryReq)
 	if err != nil {
-		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox audio_query request failed")
+		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox audio_query request failed: %w", err)
 	}
 	defer queryResp.Body.Close()
 
@@ -390,7 +425,7 @@ func (h *APIHandler) synthesizeVoicevox(ctx context.Context, req VoicevoxUITestR
 
 	synthResp, err := h.httpClient.Do(synthReq)
 	if err != nil {
-		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox synthesis request failed")
+		return voicevoxSynthesisResult{}, fmt.Errorf("voicevox synthesis request failed: %w", err)
 	}
 	defer synthResp.Body.Close()
 

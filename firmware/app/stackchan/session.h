@@ -1,6 +1,6 @@
 /**
  * @file session.h
- * @brief Stackchan セッション・オーケストレーションクラス
+ * @brief Stackchan セッション・オーケストレーション クラス
  * 
  * Wi-Fi → WebSocket → session.hello/welcome → heartbeat → audio 送信 の
  * 一連のフローを管理するステートマシンです。
@@ -11,6 +11,22 @@
  * セッション状態遷移:
  *   Idle → ConnectingWiFi → ConnectingWS → Handshaking → Active
  *                ↑__________________________↑  （切断時に再接続）
+ * 
+ * @section P8-17 受信・消費の責務分離（Producer-Consumer Pattern）
+ * 
+ * TTS 再生パイプラインは以下の役割分担で実装されています：
+ * 
+ * - **Producer（受信側）**: onTextMessage() → enqueueTTSFrame()
+ *   - WebSocket 受信フレームをキューに enqueue（ノンブロッキング）
+ *   - 受信遅延が再生フロー全体に与える影響を最小化
+ * 
+ * - **Consumer（消費側）**: processTTSPlaybackQueue()
+ *   - キューから dequeue → 40ms 分を集約 → playPCM16() で再生
+ *   - Watermark 監視（prebuffer / low-water / high-water）
+ *   - バッファ深さと滞留時間をログ出力（observability 強化）
+ * 
+ * この分離により、受信ジッターと再生ジッターの因果関係を弱め、
+ * 将来の低遅延会話実装の土台を整えます（P9以降で活用予定）。
  */
 #pragma once
 
@@ -38,6 +54,18 @@ enum class SessionState {
 };
 
 /**
+ * @brief 会話体験の状態を表します。
+ */
+enum class ConversationState {
+  Idle,
+  Listening,
+  Thinking,
+  Speaking,
+  Interrupted,
+  Error,
+};
+
+/**
  * @brief Stackchan セッション管理クラス。
  * setup() で begin()、loop() で loop() を呼び出してください。
  */
@@ -52,10 +80,16 @@ class StackchanSession {
 
   /**
    * @brief メインループ処理。loop() 内で毎フレーム呼び出します。
+   * 
+   * P8-17 で責務を明確化：
+   * - Producer フロー: _ws.loop() で受信フレーム → enqueueTTSFrame() で enqueue
+   * - Consumer フロー: processTTSPlaybackQueue() で dequeue → 再生
+   * - 受信と消費の分離により、互いに独立した進捗が可能
    */
   void loop();
 
   SessionState state() const { return _state; }
+  ConversationState conversationState() const { return _conversationState; }
 
   /**
    * @brief テスト音声ストリームを送信します（Active 状態のみ有効）。
@@ -73,6 +107,8 @@ class StackchanSession {
 
   SessionState  _state{SessionState::Idle};
   String        _sessionId{""};
+  ConversationState _conversationState{ConversationState::Idle};
+  Audio::PlaybackState _lastPlaybackState{Audio::PlaybackState::Idle};
 
   // heartbeat 管理
   unsigned long _heartbeatIntervalMs{FW_HEARTBEAT_INTERVAL_MS};
@@ -97,8 +133,56 @@ class StackchanSession {
   int _incomingTTSReceivedChunks{0};
   String _incomingTTSRequestId{""};
 
+  // P8-15: 事前バッファ付き再生キュー（low-water / high-water 管理）
+  // P8-17: Consumer フロー専用のリングバッファ
+  static constexpr size_t kTTSFrameQueueCapacity = 32;
+  static constexpr uint16_t kTTSPrebufferStartMs = 80;   ///< 再生開始前の最小バッファ
+  static constexpr uint16_t kTTSLowWaterMs = 60;         ///< 警告レベル
+  static constexpr uint16_t kTTSHighWaterMs = 240;       ///< ドロップレベル
+  static constexpr uint16_t kTTSPlaybackBatchMs = 40;    ///< 1 回の再生バッチ長
+
+  struct TTSFrameSlot {
+    uint8_t* bytes{nullptr};
+    size_t byteLen{0};
+    uint16_t frameDurationMs{0};
+    uint16_t samplesPerChunk{0};
+    int chunkIndex{0};
+  };
+
+  TTSFrameSlot _ttsFrameQueue[kTTSFrameQueueCapacity];
+  size_t _ttsFrameHead{0};
+  size_t _ttsFrameTail{0};
+  size_t _ttsFrameCount{0};
+  uint32_t _ttsBufferedMs{0};
+  bool _ttsPlaybackPrimed{false};
+  bool _ttsStreamEnded{false};
+  String _ttsStreamRequestId{""};
+  String _ttsStreamId{""};
+  String _ttsStreamCodec{"pcm"};
+  int _ttsExpectedChunkIndex{0};
+  uint32_t _ttsSampleRateHz{FW_AUDIO_SAMPLE_RATE};
+  void* _ttsOpusDecoder{nullptr};
+  uint32_t _ttsOpusDecoderSampleRateHz{0};
+
+  // P8-16: concealment（欠落補完）関連
+  // 欠落検知時に挿入する最大フレーム数（80ms @ 20ms/frame）
+  static constexpr int kMaxConcealmentFrames = 4;
+  // 直前の正常フレームのコピーを保持して減衰コピー生成に使用します。
+  uint8_t* _ttsLastGoodFrameBytes{nullptr};
+  size_t   _ttsLastGoodFrameLen{0};
+  // ストリーム内の欠落チャンク数と補完フレーム数の累計です（ログ用）。
+  int _ttsMissingChunkCount{0};
+  int _ttsConcealmentFrameCount{0};
+
+  // P8-19: watermark 状態追跡
+  String _ttsWatermarkStatus{"normal"};          ///< 現在の watermark 状態 ("normal"|"low_water"|"high_water")
+  unsigned long _ttsWatermarkLastSentMs{0};    ///< 最後に watermark イベントを送信した時刻 (millis())
+  static constexpr unsigned long kWatermarkCooldownMs = 500; ///< 同一状態での送信間隔 (ms)
+
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
+  void setConversationState(ConversationState next, const char* reason);
+  const char* conversationStateName(ConversationState state) const;
 
   // WebSocket コールバック
   void onWSConnected();
@@ -108,6 +192,7 @@ class StackchanSession {
   // 送信ヘルパー
   void sendHello();
   void sendHeartbeat();
+  void sendTTSBufferWatermark(const String& status, uint32_t bufferedMs, uint32_t thresholdMs, uint32_t framesInQueue);
   void updateAvatarFace();
   m5avatar::Expression toAvatarExpression(const String& expression) const;
   bool decodeBase64(const String& src, uint8_t** out, size_t* outLen);
@@ -119,9 +204,35 @@ class StackchanSession {
   void handleTTSEnd(const String& payloadJson);
   void handleAvatarExpression(const String& payloadJson);
   void handleMotionPlay(const String& payloadJson);
+  void handleConversationCancel(const String& payloadJson);
+  void handleTTSStop(const String& payloadJson);
+  void handleAudioStreamAbort(const String& payloadJson);
   void handleError(const String& payloadJson);
   void clearIncomingTTSBuffer();
   bool appendIncomingTTSChunk(const String& requestId, int chunkIndex, int totalChunks, const String& audioBase64);
+  void clearTTSFrameQueue();
+  bool enqueueTTSFrame(const String& requestId,
+                       const String& streamId,
+                       int chunkIndex,
+                       int frameDurationMs,
+                       int samplesPerChunk,
+                       const String& audioBase64,
+                       const String& codec);
+  bool dequeueTTSPlaybackBatch(uint16_t targetDurationMs, uint8_t** outBytes, size_t* outByteLen, uint16_t* outDurationMs);
+  bool dequeueTTSFrame(TTSFrameSlot* outFrame);
+  void processTTSPlaybackQueue();
+  void resetOpusDecoder();
+  bool ensureOpusDecoder(uint32_t sampleRateHz);
+  bool decodeOpusFrame(const uint8_t* opusBytes, size_t opusLen, uint32_t sampleRateHz, uint8_t** outPcmBytes, size_t* outPcmLen);
+  /**
+   * @brief 欠落フレームに対して concealment（補完）を挿入します。
+   * 直前の正常フレームが存在する場合は振幅を 50% に減衰したコピーを、
+   * 存在しない場合は無音（ゼロ PCM）を挿入します。
+   * @param gapCount  補完するフレーム数
+   * @param frameDurationMs フレーム長（ms）
+   * @param samplesPerChunk 1 フレームのサンプル数
+   */
+  void insertConcealmentFrames(int gapCount, int frameDurationMs, int samplesPerChunk);
 };
 
 }  // namespace App

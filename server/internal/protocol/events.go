@@ -27,6 +27,7 @@ type TTSChunkPayloadV11 struct {
 	ChunkIndex      int    `json:"chunk_index"`
 	FrameDurationMs int    `json:"frame_duration_ms"`
 	SamplesPerChunk int    `json:"samples_per_chunk"`
+	Codec           string `json:"codec,omitempty"`
 	SentAt          string `json:"sent_at,omitempty"`
 	PlayoutTS       string `json:"playout_ts,omitempty"`
 	AudioBase64     string `json:"audio_base64"`

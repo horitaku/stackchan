@@ -24,7 +24,7 @@
 | P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加する | Stackchan 宛て送信テスト API/UI、再生結果確認、遅延/失敗表示、確認手順 | 高 | 実デバイス連携時の音声経路を早期に検証し、運用前の不具合を先に発見するため | Done |
 | P8-14 | tts.chunk を音声フレーム単位へ再設計する | `stream_id` / `chunk_index` / `sent_at or playout_ts` / `frame_duration_ms` / `samples_per_chunk` を含む payload 定義、schema、互換性メモ | 中 | 現在の固定 byte 分割では低遅延再生と欠落検知に不向きなため | Done |
 | P8-15 | firmware に事前バッファ付き再生パイプラインを導入する | 60〜120ms 事前バッファ、low-water/high-water 管理、リングバッファ消費、手動確認手順 | 中 | `tts.chunk` を受信しながら安定再生するための吸収機構が必要なため | Done |
-| P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Planned |
+| P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入する | sequence/timestamp 判定、欠落時の減衰コピーまたは無音補完、運用メトリクス | 中 | Wi-Fi 揺れや再送遅延で再生グリッチが目立つのを抑えるため | Done |
 | P8-17 | 音声再生処理を専用消費ループへ分離する | 通信受信と再生処理の分離、バッファ監視、lip sync 更新点の見直し | 中 | main loop 直結のままでは将来の低遅延再生で詰まりやすいため | Planned |
 | P8-18 | Voicevox TTS の downlink を Opus 化し firmware でデコード再生する | server で PCM/WAV -> Opus フレーム化、`tts.chunk` で Opus 配信、firmware で Opus デコード再生、互換 fallback、検証手順 | 中 | 帯域削減と jitter 耐性を強化し、低遅延会話での再生安定性を高めるため | Planned |
 
@@ -245,7 +245,45 @@
 - サーバー内で `ReceivedAt` が未設定の音声チャンクも計測可能にするため、`AddAudioChunk` で受信時刻を補完するようにしました。
 - 検証結果:
   - `cd server && go test ./...` 成功
+## 2.19 P8-16 tts.chunk 欠落/遅延検知と concealment 実装メモ（2026-03-18）
 
+### firmware 側（session.cpp / session.h）
+
+- `enqueueTTSFrame()` の gap 検出ロジックを改修しました。
+  - 旧: `chunkIndex != _ttsExpectedChunkIndex` で **即座にキューをクリア** していました。
+  - 新: gap サイズを算出し、`insertConcealmentFrames()` で補完フレームを挿入します。
+  - 過去インデックス（重複送信）は `chunkIndex < _ttsExpectedChunkIndex` で無視します。
+- `insertConcealmentFrames()` を新規実装しました。
+  - **減衰コピー**: 直前の正常フレームが存在する場合、振幅を `1/2^(i+1)` に徐々に減衰してコピーします（i=0 で 50%、i=1 で 25%、...）。
+  - **無音補完**: 直前フレームがない場合はゼロ埋め PCM を挿入します。
+  - 上限: `kMaxConcealmentFrames = 4`（80ms / 20ms フレーム）を超えないようにキャップします。
+  - high-water 到達時も挿入を打ち切り、バッファオーバーフローを防ぎます。
+- `clearTTSFrameQueue()` に concealment 状態 (`_ttsLastGoodFrameBytes` / `_ttsMissingChunkCount` / `_ttsConcealmentFrameCount`) のリセット処理を追加しました。
+- 正常フレームのエンキュー後に `_ttsLastGoodFrameBytes` を更新するようにしました（減衰コピー素材）。
+- `processTTSPlaybackQueue()` のストリーム終端で concealment メトリクスをログ出力します。
+  - ログ形式: `[TTS][metrics] stream_id=... request_id=... missing_chunks=N concealment_frames=M`
+
+### server 側（runtime_state.go / ws_handler.go）
+
+- `PipelineSnapshot` に `TTSChunkSendFailCount int` を追加しました（downlink 欠落の検知指標）。
+- `OnTTSChunkSendFail(requestID, streamID string)` メソッドを追加しました。
+  - `pipeline.tts_chunk_send_fail_count` を `runtime_metrics` に永続化します。
+  - `GET /api/runtime/overview` のレスポンスに反映されます。
+- `sendTTSAudio()` の v1.1 / v1.0 ループで chunk 送信失敗時に `OnTTSChunkSendFail` を呼び出すようにしました。
+
+### 手動確認手順（P8-16）
+
+1. server から `tts.chunk(v1.1)` を連続送信する際に、意図的にチャンクを 1 つ以上省略する。
+2. firmware のログで `[TTS][concealment] gap=N inserted=M` が出力されることを確認する。
+3. 再生が止まらず、減衰した音声（または無音）でギャップが補完されることを確認する。
+4. tts.end 後に `[TTS][metrics] missing_chunks=N concealment_frames=M` が出力されることを確認する。
+5. `GET /api/runtime/overview` のレスポンスで `pipeline.tts_chunk_send_fail_count` が増えることを確認する。
+6. `tts.stop` 送信後にキューと concealment 状態がクリアされ、次のストリームで `missing_chunks=0` にリセットされることを確認する。
+
+### 検証結果
+
+- `cd server && go build ./...` 成功
+- `cd server && go test ./...` 全テスト通過
 ## 2.16 P8-18 追加メモ（2026-03-18）
 
 - 重複確認の結果、既存の `P8-14`〜`P8-17` は `tts.chunk` のフレーム設計・再生安定化が中心であり、Voicevox TTS の Opus 変換と firmware デコード実装は未登録でした。

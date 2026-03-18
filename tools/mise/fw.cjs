@@ -4,10 +4,10 @@ const { spawnSync, spawn } = require('node:child_process');
 const path = require('node:path');
 
 const action = process.argv[2];
-const allowed = new Set(['build', 'port', 'upload', 'monitor', 'upmon', 'clean']);
+const allowed = new Set(['build', 'port', 'upload', 'monitor', 'upmon', 'clean', 'compiledb']);
 
 if (!allowed.has(action)) {
-  console.error('Usage: node ./tools/mise/fw.cjs <build|port|upload|monitor|upmon|clean>');
+  console.error('Usage: node ./tools/mise/fw.cjs <build|port|upload|monitor|upmon|clean|compiledb>');
   process.exit(1);
 }
 
@@ -170,6 +170,13 @@ if (action === 'build') {
 
 if (action === 'clean') {
   runPlatformIO(['run', '-e', 'stackchan_cores3', '-t', 'clean']);
+  process.exit(0);
+}
+
+if (action === 'compiledb') {
+  // IntelliSense 用の compile_commands.json を firmware/ に生成します。
+  // 生成後は VS Code で「C/C++: Reset IntelliSense Database」を実行してください。
+  runPlatformIO(['run', '-e', 'stackchan_cores3', '--target', 'compiledb']);
   process.exit(0);
 }
 

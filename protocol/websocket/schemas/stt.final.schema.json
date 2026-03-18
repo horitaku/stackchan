@@ -32,6 +32,32 @@
           "minimum": 0,
           "maximum": 1,
           "description": "認識信頼度（0〜1、省略可）"
+        },
+        "alternatives": {
+          "type": "array",
+          "description": "候補テキスト一覧（信頼度順、省略可）",
+          "items": {
+            "type": "object",
+            "required": ["transcript"],
+            "additionalProperties": false,
+            "properties": {
+              "transcript": {
+                "type": "string",
+                "minLength": 1,
+                "description": "代替候補の認識テキスト"
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "代替候補の信頼度（0〜1、省略可）"
+              }
+            }
+          }
+        },
+        "context_hint": {
+          "type": "string",
+          "description": "LLM で曖昧性解消に使う補助情報（省略可）"
         }
       }
     }

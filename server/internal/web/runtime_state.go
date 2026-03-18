@@ -40,23 +40,27 @@ type PlaybackSnapshot struct {
 
 // PipelineSnapshot は会話パイプラインの遅延情報です。
 type PipelineSnapshot struct {
-	StreamID            string `json:"stream_id,omitempty"`
-	RequestID           string `json:"request_id,omitempty"`
-	QueueWaitMs         int64  `json:"queue_wait_ms"`
-	STTLatencyMs        int64  `json:"stt_latency_ms"`
-	LLMLatencyMs        int64  `json:"llm_latency_ms"`
-	TTSLatencyMs        int64  `json:"tts_latency_ms"`
-	TotalLatencyMs      int64  `json:"total_latency_ms"`
-	FirstFrameLatencyMs int64  `json:"first_frame_latency_ms"`
-	CadenceJitterMs     int64  `json:"cadence_jitter_ms"`
-	E2ELatencyMs        int64  `json:"e2e_latency_ms"`
+	StreamID                   string `json:"stream_id,omitempty"`
+	RequestID                  string `json:"request_id,omitempty"`
+	QueueWaitMs                int64  `json:"queue_wait_ms"`
+	STTLatencyMs               int64  `json:"stt_latency_ms"`
+	LLMLatencyMs               int64  `json:"llm_latency_ms"`
+	TTSLatencyMs               int64  `json:"tts_latency_ms"`
+	TotalLatencyMs             int64  `json:"total_latency_ms"`
+	FirstFrameLatencyMs        int64  `json:"first_frame_latency_ms"`
+	CadenceJitterMs            int64  `json:"cadence_jitter_ms"`
+	E2ELatencyMs               int64  `json:"e2e_latency_ms"`
+	LLMInputTokenCount         int    `json:"llm_input_token_count"`
+	LLMOutputTokenCount        int    `json:"llm_output_token_count"`
+	LLMTotalTokenCount         int    `json:"llm_total_token_count"`
+	LLMEffectiveTurnsInContext int    `json:"llm_effective_turns_in_context"`
 	// P8-16: tts.chunk 送信失敗の累積カウント（downlink 配信異常の検知指標）
 	TTSChunkSendFailCount int `json:"tts_chunk_send_fail_count"`
 	// P8-19: TTS バッファ watermark 統計
-	TTSWatermarkStatus        string `json:"tts_watermark_status"`          // "normal" | "low_water" | "high_water"
-	TTSBufferedMs             int    `json:"tts_buffered_ms"`               // 最新バッファ深さ（ms）
-	TTSLowWaterCount          int    `json:"tts_low_water_count"`           // low-water 累積カウント
-	TTSHighWaterDropCount      int    `json:"tts_high_water_drop_count"`    // high-water ドロップ累積カウント
+	TTSWatermarkStatus    string `json:"tts_watermark_status"`      // "normal" | "low_water" | "high_water"
+	TTSBufferedMs         int    `json:"tts_buffered_ms"`           // 最新バッファ深さ（ms）
+	TTSLowWaterCount      int    `json:"tts_low_water_count"`       // low-water 累積カウント
+	TTSHighWaterDropCount int    `json:"tts_high_water_drop_count"` // high-water ドロップ累積カウント
 }
 
 // AvatarSnapshot はアバター同期の状態です。
@@ -170,6 +174,28 @@ func (s *RuntimeState) OnPipeline(requestID, streamID string, queueWaitMs int64,
 		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.llm_latency_ms", MetricValue: float64(llmMs), MetricUnit: "ms", ObservedAt: now},
 		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.tts_latency_ms", MetricValue: float64(ttsMs), MetricUnit: "ms", ObservedAt: now},
 		{SessionID: sessionID, RequestID: requestID, MetricName: "pipeline.total_latency_ms", MetricValue: float64(totalMs), MetricUnit: "ms", ObservedAt: now},
+	}
+	s.mu.Unlock()
+	s.persistMetrics(store, metrics)
+}
+
+// OnLLMTokenMetrics は LLM の token 使用量と context 有効ターン数を記録します。
+func (s *RuntimeState) OnLLMTokenMetrics(requestID string, inputTokens, outputTokens, totalTokens, effectiveTurns int) {
+	now := time.Now().UTC()
+	s.mu.Lock()
+	sessionID := s.snapshot.Connection.SessionID
+	s.snapshot.Pipeline.RequestID = requestID
+	s.snapshot.Pipeline.LLMInputTokenCount = inputTokens
+	s.snapshot.Pipeline.LLMOutputTokenCount = outputTokens
+	s.snapshot.Pipeline.LLMTotalTokenCount = totalTokens
+	s.snapshot.Pipeline.LLMEffectiveTurnsInContext = effectiveTurns
+	s.touchLocked()
+	store := s.metricsStore
+	metrics := []RuntimeMetricWrite{
+		{SessionID: sessionID, RequestID: requestID, MetricName: "llm_input_token_count", MetricValue: float64(inputTokens), MetricUnit: "tokens", ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "llm_output_token_count", MetricValue: float64(outputTokens), MetricUnit: "tokens", ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "llm_total_token_count", MetricValue: float64(totalTokens), MetricUnit: "tokens", ObservedAt: now},
+		{SessionID: sessionID, RequestID: requestID, MetricName: "llm_effective_turns_in_context", MetricValue: float64(effectiveTurns), MetricUnit: "count", ObservedAt: now},
 	}
 	s.mu.Unlock()
 	s.persistMetrics(store, metrics)

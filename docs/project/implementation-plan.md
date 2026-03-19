@@ -45,6 +45,9 @@
 | 7 | WebUI と可観測性 | 設定 UI、診断、ランタイム可視化 | 運用者がシステムの確認とテストを実施できる |
 | 8 | 統合と運用 | Docker、マイグレーション、CI、障害復旧強化 | 開発運用と実行運用が再現可能である |
 | 9 | LLM 実装と会話コンテキスト統合 | OpenAI Chat Completions、Persona 設定、会話履歴管理、LLM テスト導線 | OpenAI LLM が応答し、UI から Persona 設定可能である |
+| 10 | 識別とメモリー運用基盤 | 複数デバイス識別、長期記憶キー設計、記憶ガバナンス、評価導線 | セッション外記憶が安全かつ再現可能に運用できる |
+| 11 | Firmware ハードウェア制御と診断導線 | デバイス抽象化、制御イベント、Hardware Test UI、状態レポート | WebUI から安全にハードウェア診断・校正・疎通確認を実施できる |
+| 12 | Firmware 内部リファクタリング | StackchanSession 分解、実装ファイル整理、内部境界の明確化 | session.cpp の肥大化を抑え、今後の hardware 拡張を安全に継続できる |
 
 ## 5. フェーズ詳細
 
@@ -130,6 +133,35 @@
 - LLM 関連の障害復旧ランブックを追加します。
 - 実行タスクは docs/project/phase09-tasklist.md で管理します。
 
+### フェーズ 10. 識別とメモリー運用基盤
+
+- 複数 Stackchan 同時接続を前提に、識別キーの責務分離を明確化します（session_id / device_id / request_id）。
+- 5 種類の記憶タイプ（Session / Episodic / Semantic / Profile / Reflection）を段階的に構築します。
+- Memory Orchestrator を中核に、ContextBundle 組み立て・PostProcess・セッション要約フローを実装します。
+- 記憶取得は keywordスコアリング（将来は vector 検索）を基本にし、importance / confidence / recency で重み付けします。
+- memory_facts / memories / profiles の DB スキーマを追加し、sessions に device_id を永続化します。
+- 記憶ガバナンス（TTL/削除 API/監査ログ）と WebUI 運用導線を整備します。
+- 実行タスクは docs/project/phase10-tasklist.md で管理します。
+
+### フェーズ 11. Firmware ハードウェア制御と診断導線
+
+- firmware 内のハードウェア責務を runtime / app 配下のサービスへ分離し、StackchanSession はイベント受信と委譲に集中させます。
+- WebSocket protocol に device 制御イベントを追加し、LED、耳 NeoPixel、サーボ、音声テスト、マイク計測、カメラ取得、状態報告を契約化します。
+- WebUI は本番設定画面として肥大化させる前に、Hardware Test を中心とした診断コンソールとして拡張します。
+- server には WebUI から接続中 Stackchan へ制御を中継するテスト API を追加し、既存の UI -> server -> Stackchan の流れを再利用します。
+- サーボ制御は raw angle 直指定より先に logical angle + calibration + safety limit の二層モデルを導入し、個体差調整と破損防止を優先します。
+- low-level の device.servo.move と high-level の motion.play を分離し、診断用制御と演出用動作を混線させません。
+- 実行タスクは docs/project/phase11-tasklist.md で管理します。
+
+### フェーズ 12. Firmware 内部リファクタリング
+
+- firmware の外部挙動を変えずに、肥大化した StackchanSession の内部責務を整理します。
+- 最初の段階では public API を維持したまま実装ファイルを分割し、connection / protocol / avatar / tts stream などの関心事を見通しよくします。
+- 次の段階で、TTS ストリーム処理、Avatar 表示、イベントディスパッチなど独立性の高い塊を補助クラスまたは内部モジュールへ切り出します。
+- メモリ所有権、会話状態遷移、watermark 送信、Opus decode のような壊れやすい部分は、機能追加前に責務境界を固定します。
+- 本フェーズは Phase 11 の大型拡張を安全に継続するための下準備として扱い、機能追加よりも変更容易性と検証容易性を優先します。
+- 実行タスクは docs/project/phase12-tasklist.md で管理します。
+
 ## 6. PDCA 運用モデル
 
 短いイテレーションで進めます。1 つのイテレーションは、必ず 1 つの薄い縦スライスのみを対象とします。
@@ -213,17 +245,42 @@
 | P2-2 | セッション管理を追加 | 高 | Copilot | P2-1 | 相関 ID 付きで実装済み | 完了 |
 | P3-1 | Provider インターフェースを定義 | 高 | Copilot | P2-2 | STT、LLM、TTS を interface-first で実装済み | 完了 |
 | P3-2 | Provider 呼び出しポリシーを導入 | 高 | Copilot | P3-1 | timeout / retry / cancel / error mapping を実装済み | 完了 |
-| P4-1 | audio バイナリ転送を実装 | 高 | TBD | P3-2 | WebSocket binary と Opus フレーム受け渡し | 計画済み |
-| P8-08 | interrupt 系イベントを protocol へ正式追加 | 高 | TBD | P4-1 | `conversation.cancel` / `tts.stop` / `audio.stream_abort` を schema-first で追加 | 計画済み |
-| P8-09 | firmware に最小 conversation 状態遷移を実装 | 高 | TBD | P8-08 | `idle/listening/thinking/speaking/interrupted/error` の遷移を最小導入 | 計画済み |
-| P8-10 | Opus 経路の計測項目を runtime metrics へ追加 | 高 | TBD | P8-05, P8-04 | first frame / cadence jitter / E2E latency を収集して可視化へ接続 | 計画済み |
+| P4-1 | audio バイナリ転送を実装 | 高 | Copilot | P3-2 | WebSocket binary と Opus フレーム受け渡し | 完了 |
+| P8-08 | interrupt 系イベントを protocol へ正式追加 | 高 | Copilot | P4-1 | `conversation.cancel` / `tts.stop` / `audio.stream_abort` を schema-first で追加 | 完了 |
+| P8-09 | firmware に最小 conversation 状態遷移を実装 | 高 | Copilot | P8-08 | `idle/listening/thinking/speaking/interrupted/error` の遷移を最小導入 | 完了 |
+| P8-10 | Opus 経路の計測項目を runtime metrics へ追加 | 高 | Copilot | P8-05, P8-04 | first frame / cadence jitter / E2E latency を収集して可視化へ接続 | 完了 |
 | P8-11 | Docker compose に Voicevox を追加し TTS 環境を前倒し整備 | 高 | Copilot | P8-01 | `voicevox` サービス追加、`VOICEVOX_BASE_URL` 接続確認、起動/復旧手順を整備 | 完了 |
 | P8-12 | WebUI から Voicevox を使った UI 単体テスト導線を追加 | 高 | Copilot | P8-11 | テキスト入力 -> 音声生成 -> UI 内確認の最小テスト導線を追加 | 完了 |
 | P8-13 | WebUI から Voicevox を使った Stackchan 連携テスト導線を追加 | 高 | Copilot | P8-12 | Stackchan 連携時の再生結果と遅延を確認できるテスト導線を追加 | 完了 |
-| P8-14 | tts.chunk を音声フレーム単位へ再設計 | 中 | TBD | P8-13 | `stream_id` / `frame_duration_ms` / `samples_per_chunk` / `playout_ts` を含む chunk 契約へ更新 | 計画済み |
-| P8-15 | firmware に事前バッファ付き再生パイプラインを導入 | 中 | TBD | P8-14 | 60〜120ms 事前バッファ、low-water/high-water、リングバッファ消費を導入 | 計画済み |
-| P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入 | 中 | TBD | P8-15 | sequence/timestamp 管理と欠落時の補完方針を追加 | 計画済み |
-| P8-17 | 音声再生処理を専用消費ループへ分離 | 中 | TBD | P8-15 | 通信受信と再生処理を分離し、将来の低遅延化に備える | 計画済み |
+| P8-14 | tts.chunk を音声フレーム単位へ再設計 | 中 | Copilot | P8-13 | `stream_id` / `frame_duration_ms` / `samples_per_chunk` / `playout_ts` を含む chunk 契約へ更新 | 完了 |
+| P8-15 | firmware に事前バッファ付き再生パイプラインを導入 | 中 | Copilot | P8-14 | 60〜120ms 事前バッファ、low-water/high-water、リングバッファ消費を導入 | 完了 |
+| P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入 | 中 | Copilot | P8-15 | sequence/timestamp 管理と欠落時の補完方針を追加 | 完了 |
+| P8-17 | 音声再生処理を専用消費ループへ分離 | 中 | Copilot | P8-15 | 通信受信と再生処理を分離し、将来の低遅延化に備える | 完了 |
+| P10-01 | 識別キー方針を protocol と server へ明文化 | 高 | Copilot | P9-06 | session_id（接続）、device_id（個体）、request_id（ターン）の責務を固定し、衝突時ルールを定義 | 未着手 |
+| P10-02 | sessions に device_id / user_id を追加 | 高 | Copilot | P10-01 | migration 追加、handshake 更新、session 再接続時に同一デバイス追跡可能化 | 未着手 |
+| P10-03 | Profile Memory スキーマと CRUD API | 高 | Copilot | P10-02 | profiles テーブル、GET/PUT /api/memory/profile、WebUI 設定画面 | 未着手 |
+| P10-04 | Semantic Memory（memory_facts）スキーマと初期抽出 | 高 | Copilot | P10-02 | memory_facts テーブル、FactRepository、ルールベース Extractor | 未着手 |
+| P10-05 | Memory Orchestrator の骨組み実装 | 高 | Copilot | P10-03, P10-04 | orchestrator.go、ContextBundle、Prompt Builder の骨組み | 未着手 |
+| P10-06 | セッション要約機能 | 中 | Copilot | P10-05 | Summarizer、sessions.last_summary 更新、20 メッセージ／トークン閾値トリガー | 未着手 |
+| P10-07 | Episodic Memory スキーマと保存 | 中 | Copilot | P10-05 | memories テーブル（type=episode）、PostProcess 連携 | 未着手 |
+| P10-08 | 記憶 Retriever のスコアリング実装 | 中 | Copilot | P10-07 | retriever.go、scorer.go、importance/confidence/recency の重み計算 | 未着手 |
+| P10-09 | 同時接続制御と認可検証 | 高 | Copilot | P10-01 | 同一 device_id 接続ポリシー（reject/kick）、エラーイベント設計 | 未着手 |
+| P10-10 | Reflection Memory と LLM 要約連携 | 低 | Copilot | P10-06 | Summarizer の LLM 連携、memories type=reflection 保存 | 未着手 |
+| P10-11 | 記憶ガバナンス実装 | 高 | Copilot | P10-04 | TTL 設定、削除 API、論理削除、監査ログ | 未着手 |
+| P10-12 | WebUI 記憶管理導線 | 中 | Copilot | P10-11 | 記憶参照・削除 UI、facts 編集 UI、テスト API | 未着手 |
+| P10-13 | 記憶品質評価と回帰テスト | 中 | Copilot | P10-08 | key fact 再現テスト、誤想起テスト、CI 組込 | 未着手 |
+| P10-14 | ランブックと監査導線の整備 | 中 | Copilot | P10-11, P10-09 | memory 運用 runbook、障害切り分け手順、アクセスログ確認手順 | 未着手 |
+| P11-01 | firmware のハードウェア責務をサービスへ分離 | 高 | Copilot | P8-17 | servo / lighting / touch / camera の責務を StackchanSession から外し、委譲中心へ整理 | 未着手 |
+| P11-02 | device 制御イベントを protocol v0 に追加 | 高 | Copilot | P11-01 | device.led.set / device.ears.set / device.servo.move / device.state.report などを schema-first で定義 | 未着手 |
+| P11-03 | server に hardware test API を追加 | 高 | Copilot | P11-02 | WebUI から接続中セッションへ制御を中継する API 群を実装 | 未着手 |
+| P11-04 | WebUI Hardware Test 画面を追加 | 高 | Copilot | P11-03 | Servo / LED / Audio / Camera の即時診断導線を実装 | 未着手 |
+| P11-05 | firmware 状態レポートと診断ログを強化 | 中 | Copilot | P11-03 | RSSI / heap / angle / calibration / mic level / speaker busy を可視化へ接続 | 未着手 |
+| P12-01 | StackchanSession の責務マップを作成 | 高 | Copilot | P8-17 | connection / protocol / avatar / tts stream / audio uplink の依存を棚卸しし、分割順を固定 | 未着手 |
+| P12-02 | session.cpp を実装ファイル単位で分割 | 高 | Copilot | P12-01 | public API を維持したまま session_connection / session_protocol / session_tts_stream などへ整理 | 未着手 |
+| P12-03 | TTS ストリーム処理を内部モジュール化 | 高 | Copilot | P12-02 | frame queue / concealment / watermark / opus decode の責務を session 本体から縮退 | 未着手 |
+| P12-04 | Avatar 表示と motion 演出を分離 | 中 | Copilot | P12-02 | 表情更新、lip sync、表示更新周期、最小 motion 演出を独立させる | 未着手 |
+| P12-05 | 受信イベントルータを整理 | 中 | Copilot | P12-02 | onTextMessage の dispatch と handler 群を見通しの良い構造へ再編 | 未着手 |
+| P12-06 | リファクタ後の回帰確認導線を追加 | 高 | Copilot | P12-03, P12-04, P12-05 | hello/welcome、heartbeat、tts playback、interrupt の回帰を検証可能にする | 未着手 |
 
 ## 11. 意思決定ログ
 

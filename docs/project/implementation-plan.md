@@ -47,6 +47,7 @@
 | 9 | LLM 実装と会話コンテキスト統合 | OpenAI Chat Completions、Persona 設定、会話履歴管理、LLM テスト導線 | OpenAI LLM が応答し、UI から Persona 設定可能である |
 | 10 | 識別とメモリー運用基盤 | 複数デバイス識別、長期記憶キー設計、記憶ガバナンス、評価導線 | セッション外記憶が安全かつ再現可能に運用できる |
 | 11 | Firmware ハードウェア制御と診断導線 | デバイス抽象化、制御イベント、Hardware Test UI、状態レポート | WebUI から安全にハードウェア診断・校正・疎通確認を実施できる |
+| 12 | Firmware 内部リファクタリング | StackchanSession 分解、実装ファイル整理、内部境界の明確化 | session.cpp の肥大化を抑え、今後の hardware 拡張を安全に継続できる |
 
 ## 5. フェーズ詳細
 
@@ -151,6 +152,15 @@
 - サーボ制御は raw angle 直指定より先に logical angle + calibration + safety limit の二層モデルを導入し、個体差調整と破損防止を優先します。
 - low-level の device.servo.move と high-level の motion.play を分離し、診断用制御と演出用動作を混線させません。
 - 実行タスクは docs/project/phase11-tasklist.md で管理します。
+
+### フェーズ 12. Firmware 内部リファクタリング
+
+- firmware の外部挙動を変えずに、肥大化した StackchanSession の内部責務を整理します。
+- 最初の段階では public API を維持したまま実装ファイルを分割し、connection / protocol / avatar / tts stream などの関心事を見通しよくします。
+- 次の段階で、TTS ストリーム処理、Avatar 表示、イベントディスパッチなど独立性の高い塊を補助クラスまたは内部モジュールへ切り出します。
+- メモリ所有権、会話状態遷移、watermark 送信、Opus decode のような壊れやすい部分は、機能追加前に責務境界を固定します。
+- 本フェーズは Phase 11 の大型拡張を安全に継続するための下準備として扱い、機能追加よりも変更容易性と検証容易性を優先します。
+- 実行タスクは docs/project/phase12-tasklist.md で管理します。
 
 ## 6. PDCA 運用モデル
 
@@ -265,6 +275,12 @@
 | P11-03 | server に hardware test API を追加 | 高 | Copilot | P11-02 | WebUI から接続中セッションへ制御を中継する API 群を実装 | 未着手 |
 | P11-04 | WebUI Hardware Test 画面を追加 | 高 | Copilot | P11-03 | Servo / LED / Audio / Camera の即時診断導線を実装 | 未着手 |
 | P11-05 | firmware 状態レポートと診断ログを強化 | 中 | Copilot | P11-03 | RSSI / heap / angle / calibration / mic level / speaker busy を可視化へ接続 | 未着手 |
+| P12-01 | StackchanSession の責務マップを作成 | 高 | Copilot | P8-17 | connection / protocol / avatar / tts stream / audio uplink の依存を棚卸しし、分割順を固定 | 未着手 |
+| P12-02 | session.cpp を実装ファイル単位で分割 | 高 | Copilot | P12-01 | public API を維持したまま session_connection / session_protocol / session_tts_stream などへ整理 | 未着手 |
+| P12-03 | TTS ストリーム処理を内部モジュール化 | 高 | Copilot | P12-02 | frame queue / concealment / watermark / opus decode の責務を session 本体から縮退 | 未着手 |
+| P12-04 | Avatar 表示と motion 演出を分離 | 中 | Copilot | P12-02 | 表情更新、lip sync、表示更新周期、最小 motion 演出を独立させる | 未着手 |
+| P12-05 | 受信イベントルータを整理 | 中 | Copilot | P12-02 | onTextMessage の dispatch と handler 群を見通しの良い構造へ再編 | 未着手 |
+| P12-06 | リファクタ後の回帰確認導線を追加 | 高 | Copilot | P12-03, P12-04, P12-05 | hello/welcome、heartbeat、tts playback、interrupt の回帰を検証可能にする | 未着手 |
 
 ## 11. 意思決定ログ
 

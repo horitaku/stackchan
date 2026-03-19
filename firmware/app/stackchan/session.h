@@ -126,58 +126,78 @@ class StackchanSession {
   m5avatar::Avatar _avatar;
   bool _avatarReady{false};
 
-  // 受信 TTS チャンクバッファ
-  uint8_t* _incomingTTSBuffer{nullptr};
-  size_t _incomingTTSBufferLen{0};
-  int _incomingTTSExpectedChunks{0};
-  int _incomingTTSReceivedChunks{0};
-  String _incomingTTSRequestId{""};
+  /**
+   * @brief TTS ストリーム処理に関する状態を集約した補助構造体です。
+   *
+   * P12-08: session.h に散在していた TTS 専用フィールドを一か所にまとめました。
+   * 所有権境界を明確化し、将来の module split（TTSStreamHandler への抽出）を容易にします。
+   *
+   * 責務の内訳:
+   *   - 旧バッファ方式: incoming accumulation（appendIncomingTTSChunk）
+   *   - 新キュー方式: リングバッファ enqueue/dequeue（enqueueTTSFrame）
+   *   - Opus デコーダ（lazy init / destroy）
+   *   - concealment（欠落フレーム補完）
+   *   - watermark 状態追跡（送信頻度制御）
+   */
+  struct TTSStreamContext {
+    // ── フレームスロット定義 ──────────────────────────────────────────
+    struct FrameSlot {
+      uint8_t* bytes{nullptr};
+      size_t byteLen{0};
+      uint16_t frameDurationMs{0};
+      uint16_t samplesPerChunk{0};
+      int chunkIndex{0};
+    };
 
-  // P8-15: 事前バッファ付き再生キュー（low-water / high-water 管理）
-  // P8-17: Consumer フロー専用のリングバッファ
-  static constexpr size_t kTTSFrameQueueCapacity = 32;
-  static constexpr uint16_t kTTSPrebufferStartMs = 80;   ///< 再生開始前の最小バッファ
-  static constexpr uint16_t kTTSLowWaterMs = 60;         ///< 警告レベル
-  static constexpr uint16_t kTTSHighWaterMs = 240;       ///< ドロップレベル
-  static constexpr uint16_t kTTSPlaybackBatchMs = 40;    ///< 1 回の再生バッチ長
+    // ── キュー定数 ────────────────────────────────────────────────────
+    static constexpr size_t   kFrameQueueCapacity   = 32;
+    static constexpr uint16_t kPrebufferStartMs     = 80;   ///< 再生開始前の最小バッファ
+    static constexpr uint16_t kLowWaterMs           = 60;   ///< 警告レベル
+    static constexpr uint16_t kHighWaterMs          = 240;  ///< ドロップレベル
+    static constexpr uint16_t kPlaybackBatchMs      = 40;   ///< 1 回の再生バッチ長
+    static constexpr int      kMaxConcealmentFrames = 4;    ///< 欠落補完の最大挿入フレーム数
+    static constexpr unsigned long kWatermarkCooldownMs = 500; ///< 同一状態での送信間隔 (ms)
 
-  struct TTSFrameSlot {
-    uint8_t* bytes{nullptr};
-    size_t byteLen{0};
-    uint16_t frameDurationMs{0};
-    uint16_t samplesPerChunk{0};
-    int chunkIndex{0};
+    // ── 旧バッファ方式（incoming accumulation） ──────────────────────
+    uint8_t* incomingBuffer{nullptr};
+    size_t   incomingBufferLen{0};
+    int      incomingExpectedChunks{0};
+    int      incomingReceivedChunks{0};
+    String   incomingRequestId{""};
+
+    // ── フレームキュー方式（ring buffer） ──────────────────────────────
+    FrameSlot frameQueue[kFrameQueueCapacity];
+    size_t    frameHead{0};
+    size_t    frameTail{0};
+    size_t    frameCount{0};
+    uint32_t  bufferedMs{0};
+
+    // ── ストリーム制御 ──────────────────────────────────────────────────
+    bool     playbackPrimed{false};
+    bool     streamEnded{false};
+    String   streamRequestId{""};
+    String   streamId{""};
+    String   streamCodec{"pcm"};
+    int      expectedChunkIndex{0};
+    uint32_t sampleRateHz{FW_AUDIO_SAMPLE_RATE};
+
+    // ── Opus デコーダ ────────────────────────────────────────────────────
+    void*    opusDecoder{nullptr};
+    uint32_t opusDecoderSampleRateHz{0};
+
+    // ── Concealment（欠落補完） ────────────────────────────────────────
+    uint8_t* lastGoodFrameBytes{nullptr};
+    size_t   lastGoodFrameLen{0};
+    int      missingChunkCount{0};
+    int      concealmentFrameCount{0};
+
+    // ── Watermark 状態追跡 ────────────────────────────────────────────
+    String        watermarkStatus{"normal"};
+    unsigned long watermarkLastSentMs{0};
   };
 
-  TTSFrameSlot _ttsFrameQueue[kTTSFrameQueueCapacity];
-  size_t _ttsFrameHead{0};
-  size_t _ttsFrameTail{0};
-  size_t _ttsFrameCount{0};
-  uint32_t _ttsBufferedMs{0};
-  bool _ttsPlaybackPrimed{false};
-  bool _ttsStreamEnded{false};
-  String _ttsStreamRequestId{""};
-  String _ttsStreamId{""};
-  String _ttsStreamCodec{"pcm"};
-  int _ttsExpectedChunkIndex{0};
-  uint32_t _ttsSampleRateHz{FW_AUDIO_SAMPLE_RATE};
-  void* _ttsOpusDecoder{nullptr};
-  uint32_t _ttsOpusDecoderSampleRateHz{0};
-
-  // P8-16: concealment（欠落補完）関連
-  // 欠落検知時に挿入する最大フレーム数（80ms @ 20ms/frame）
-  static constexpr int kMaxConcealmentFrames = 4;
-  // 直前の正常フレームのコピーを保持して減衰コピー生成に使用します。
-  uint8_t* _ttsLastGoodFrameBytes{nullptr};
-  size_t   _ttsLastGoodFrameLen{0};
-  // ストリーム内の欠落チャンク数と補完フレーム数の累計です（ログ用）。
-  int _ttsMissingChunkCount{0};
-  int _ttsConcealmentFrameCount{0};
-
-  // P8-19: watermark 状態追跡
-  String _ttsWatermarkStatus{"normal"};          ///< 現在の watermark 状態 ("normal"|"low_water"|"high_water")
-  unsigned long _ttsWatermarkLastSentMs{0};    ///< 最後に watermark イベントを送信した時刻 (millis())
-  static constexpr unsigned long kWatermarkCooldownMs = 500; ///< 同一状態での送信間隔 (ms)
+  // P12-08: TTS ストリーム処理状態を TTSStreamContext に集約します。
+  TTSStreamContext _tts;
 
   // ── 内部ヘルパー ──────────────────────────────────────────────────
   void setState(SessionState next);
@@ -219,7 +239,7 @@ class StackchanSession {
                        const String& audioBase64,
                        const String& codec);
   bool dequeueTTSPlaybackBatch(uint16_t targetDurationMs, uint8_t** outBytes, size_t* outByteLen, uint16_t* outDurationMs);
-  bool dequeueTTSFrame(TTSFrameSlot* outFrame);
+  bool dequeueTTSFrame(TTSStreamContext::FrameSlot* outFrame);
   void processTTSPlaybackQueue();
   void resetOpusDecoder();
   bool ensureOpusDecoder(uint32_t sampleRateHz);

@@ -50,19 +50,19 @@ void StackchanSession::sendHeartbeat() {
 }
 
 // P8-19: TTS バッファ watermark 状態を server へ送信します。
-// 状態変化時のみ送信し、kWatermarkCooldownMs 内の連続送信は抑制します。
+// 状態変化時のみ送信し、TTSStreamContext::kWatermarkCooldownMs 内の連続送信は抑制します。
 void StackchanSession::sendTTSBufferWatermark(
     const String& status, uint32_t bufferedMs, uint32_t thresholdMs, uint32_t framesInQueue) {
   const unsigned long now = millis();
-  if (status == _ttsWatermarkStatus && (now - _ttsWatermarkLastSentMs) < kWatermarkCooldownMs) {
+  if (status == _tts.watermarkStatus && (now - _tts.watermarkLastSentMs) < TTSStreamContext::kWatermarkCooldownMs) {
     return;
   }
-  _ttsWatermarkStatus = status;
-  _ttsWatermarkLastSentMs = now;
+  _tts.watermarkStatus = status;
+  _tts.watermarkLastSentMs = now;
 
   JsonDocument payload;
-  payload["request_id"]      = _ttsStreamRequestId;
-  payload["stream_id"]       = _ttsStreamId;
+  payload["request_id"]      = _tts.streamRequestId;
+  payload["stream_id"]       = _tts.streamId;
   payload["status"]          = status;
   payload["buffered_ms"]     = bufferedMs;
   payload["threshold_ms"]    = thresholdMs;

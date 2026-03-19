@@ -101,7 +101,7 @@ firmware/app/stackchan/
 | P12-05 | audio uplink 実装を分離 | session_audio_upload.cpp、sendAudioStream 周辺の整理 | 中 | uplink と playback の責務を分け、音声入出力の変更点を追いやすくするため | 完了（firmware/app/stackchan/session_audio_upload.cpp） |
 | P12-06 | TTS ストリーム処理を分離 | session_tts_stream.cpp、queue / concealment / watermark / opus decode | 高 | 現在もっとも状態量が多く、保守負荷が高い領域であるため | 完了（firmware/app/stackchan/session_tts_stream.cpp） |
 | P12-07 | Avatar / motion 表示処理を分離 | session_avatar.cpp、expression / motion / lip sync 更新 | 中 | hardware control と avatar behavior の分離方針に沿って見通しを改善するため | 完了（firmware/app/stackchan/session_avatar.cpp） |
-| P12-08 | TTS ストリーム処理を補助モジュール化 | helper 構造体または内部クラス、所有権整理 | 中 | file split だけでは残る複雑性を段階的に縮退させるため | 未着手 |
+| P12-08 | TTS ストリーム処理を補助モジュール化 | helper 構造体または内部クラス、所有権整理 | 中 | file split だけでは残る複雑性を段階的に縮退させるため | 完了（session.h に TTSStreamContext 補助構造体を追加、session_tts_stream.cpp / session_protocol.cpp のアクセスパスを _tts.xxx に変更） |
 | P12-09 | 受信イベントルータの見直し | event handler table または整理済み dispatch | 中 | device 系イベント追加時の条件分岐増殖を防ぐため | 未着手 |
 | P12-10 | 回帰確認項目を整備 | チェックリスト、必要なら最小テスト追加、確認手順 | 高 | リファクタ単独フェーズでは機能追加より回帰防止が成果そのものになるため | 未着手 |
 | P12-11 | リファクタ結果を docs へ反映 | Phase 11 への引き継ぎメモ、設計境界、既知制約 | 中 | 以後の hardware service 分離が同じ前提で進められるようにするため | 未着手 |

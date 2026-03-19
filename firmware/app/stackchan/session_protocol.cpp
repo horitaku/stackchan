@@ -88,6 +88,35 @@ void StackchanSession::sendTTSBufferWatermark(
 // ──────────────────────────────────────────────────────────────────────
 
 void StackchanSession::onTextMessage(const String& msg) {
+  using PayloadHandler = void (StackchanSession::*)(const String&);
+  using EnvelopeHandler = void (StackchanSession::*)(const String&, const String&);
+
+  struct PayloadRoute {
+    const char* type;
+    PayloadHandler handler;
+  };
+
+  struct EnvelopeRoute {
+    const char* type;
+    EnvelopeHandler handler;
+  };
+
+  static const EnvelopeRoute envelopeRoutes[] = {
+    {Protocol::EventType::SESSION_WELCOME, &StackchanSession::handleWelcome},
+  };
+
+  static const PayloadRoute payloadRoutes[] = {
+    {Protocol::EventType::STT_FINAL, &StackchanSession::handleSTTFinal},
+    {Protocol::EventType::TTS_CHUNK, &StackchanSession::handleTTSChunk},
+    {Protocol::EventType::TTS_END, &StackchanSession::handleTTSEnd},
+    {Protocol::EventType::AVATAR_EXPRESSION, &StackchanSession::handleAvatarExpression},
+    {Protocol::EventType::MOTION_PLAY, &StackchanSession::handleMotionPlay},
+    {Protocol::EventType::CONVERSATION_CANCEL, &StackchanSession::handleConversationCancel},
+    {Protocol::EventType::TTS_STOP, &StackchanSession::handleTTSStop},
+    {Protocol::EventType::AUDIO_STREAM_ABORT, &StackchanSession::handleAudioStreamAbort},
+    {Protocol::EventType::ERROR_EVENT, &StackchanSession::handleError},
+  };
+
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, msg);
   if (err) {
@@ -101,29 +130,21 @@ void StackchanSession::onTextMessage(const String& msg) {
   String payloadStr;
   serializeJson(doc["payload"], payloadStr);
 
-  if (strcmp(type, Protocol::EventType::SESSION_WELCOME) == 0) {
-    handleWelcome(payloadStr, String(envSessionId));
-  } else if (strcmp(type, Protocol::EventType::STT_FINAL) == 0) {
-    handleSTTFinal(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::TTS_CHUNK) == 0) {
-    handleTTSChunk(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::TTS_END) == 0) {
-    handleTTSEnd(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::AVATAR_EXPRESSION) == 0) {
-    handleAvatarExpression(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::MOTION_PLAY) == 0) {
-    handleMotionPlay(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::CONVERSATION_CANCEL) == 0) {
-    handleConversationCancel(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::TTS_STOP) == 0) {
-    handleTTSStop(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::AUDIO_STREAM_ABORT) == 0) {
-    handleAudioStreamAbort(payloadStr);
-  } else if (strcmp(type, Protocol::EventType::ERROR_EVENT) == 0) {
-    handleError(payloadStr);
-  } else {
-    Serial.printf("[Session] Unhandled event type: %s\n", type);
+  for (const EnvelopeRoute& route : envelopeRoutes) {
+    if (strcmp(type, route.type) == 0) {
+      (this->*route.handler)(payloadStr, String(envSessionId));
+      return;
+    }
   }
+
+  for (const PayloadRoute& route : payloadRoutes) {
+    if (strcmp(type, route.type) == 0) {
+      (this->*route.handler)(payloadStr);
+      return;
+    }
+  }
+
+  Serial.printf("[Session] Unhandled event type: %s\n", type);
 }
 
 // ──────────────────────────────────────────────────────────────────────

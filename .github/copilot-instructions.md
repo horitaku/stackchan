@@ -342,7 +342,7 @@ infra/
 
 #### 8.6.2 DB設計指針（PostgreSQL）
 
-- 永続化対象は `sessions`、`utterances`、`conversation_events`、`runtime_metrics`、`system_settings` を基本とする
+- 永続化対象は `sessions`、`utterances`、`conversation_events`、`runtime_metrics`、`system_settings`、`memories`、`memory_facts`、`profiles` を基本とする
 - 機密情報（APIキー、Wi-Fiパスワード、アクセストークン等）は DB に保存しない
 - 全主要テーブルに `id`、`created_at`、`updated_at` を持たせ、削除方針は `deleted_at` の有無で明示する
 - 相関追跡のため、会話系テーブルには `session_id` と `request_id` を保持する
@@ -430,6 +430,9 @@ examples/
 8. WebUI は「Svelte static build を Go で配信」の構成を前提に提案する
 9. WebUI の設定操作とテスト実行は API 化し、画面と処理責務を分離する
 10. Dockerfile はマルチステージビルド（Stage1: Node.js/Svelte → Stage2: Go + dist コピー → Stage3: 最小ランタイム）で構成し、`embed.FS` で静的ファイルを埋め込む
+11. 記憶機能は Memory Orchestrator を中核に、BuildContext → PostProcess の 2 フロー構成で実装する（§12 参照）
+12. 識別子は session_id（接続単位）・device_id（個体単位）・request_id（ターン単位）の責務を厳守し、user_id = device_id の 1:1 運用から始める
+13. 記憶保存判定はルールベース Extractor から始め、LLM 抽出は Phase 2 以降に導入する
 
 ## 11. 今後の拡張候補（メモ）
 
@@ -440,6 +443,73 @@ examples/
 - オフライン時の限定機能モード
 - Realtime API 相当の低遅延会話モード
 - ローカル推論モード（クラウド API 非依存）の検証
+- 記憶検索を keyword → Qdrant（vector embedding）へ高精度化
+- 家族スコープ（scope=family）による複数ユーザー記憶の分離
+- 感情タグ・時間帯連動ペルソナ
+
+## 12. 識別とメモリー基盤の設計方針（フェーズ 10〜）
+
+### 12.1 識別子の責務
+
+| 識別子 | ライフタイム | 主な用途 |
+| --- | --- | --- |
+| session_id | WebSocket 接続単位（再接続で再発行） | ライブ接続管理、短期記憶スコープ |
+| device_id | firmware 個体（半永久） | 再接続追跡、長期記憶の紐づけ主軸 |
+| request_id | 1 会話ターン | STT/LLM/TTS/metrics の相関突合 |
+| user_id | 運用単位（現時点は device_id と 1:1） | 記憶スコープの論理単位 |
+
+- 現時点では `user_id = device_id` で 1:1 運用から始める
+- 家族複数運用は将来 user_id を独立させて対応する
+- 受信識別子を無条件に信用しない（server-side で検証する）
+- 同一 device_id の二重接続ポリシーを明示する（reject または旧接続切断）
+
+### 12.2 記憶タイプ（5 種類）
+
+| タイプ | 保存先 | ライフタイム |
+| --- | --- | --- |
+| Session Memory（短期） | インメモリ / utterances テーブルの直近 N 件 | セッション内のみ |
+| Episodic Memory（出来事） | memories テーブル（type=episode） | 長期、TTL 設定可 |
+| Semantic Memory（事実） | memory_facts テーブル（key-value） | 長期、upsert で更新 |
+| Profile Memory（ペルソナ） | profiles テーブル | 半永久（明示変更のみ更新） |
+| Reflection Memory（要約） | memories テーブル（type=reflection） | 長期、要約のたびに更新 |
+
+### 12.3 Memory Orchestrator パターン
+
+```go
+// Orchestrator は会話の文脈構築と記憶更新の中核を担います。
+type Orchestrator interface {
+    // BuildContext は LLM 呼び出し前に記憶・プロファイル・会話履歴を集約します。
+    BuildContext(ctx context.Context, userID, sessionID, input string) (*ContextBundle, error)
+    // PostProcess は LLM 応答後に記憶候補を抽出・保存し、必要に応じてセッションを要約します。
+    PostProcess(ctx context.Context, userID, sessionID, userInput, assistantOutput string) error
+}
+```
+
+- `server/internal/memory/` に orchestrator / extractor / retriever / summarizer を配置する
+- `server/internal/prompt/` に Prompt Builder / テンプレートを配置する
+
+### 12.4 記憶スコアリング（Retriever）
+
+```
+total_score =
+  0.50 * keyword_match     ← content / summary との一致度
+  0.20 * recency_score     ← 直近 7 日は加点
+  0.20 * importance        ← 書き込み時に付与（0-1）
+  0.10 * confidence        ← 書き込み時に付与（0-1）
+```
+
+将来は `0.50 * vector_similarity` に置き換える（Qdrant 導入時）。
+
+### 12.5 段階的実装順序
+
+| ステップ | 追加する機能 |
+| --- | --- |
+| Step 1 | Profile Memory + Semantic Facts（memory_facts）+ Session Summary |
+| Step 2 | Episodic Memory + Retriever スコアリング |
+| Step 3 | Reflection Memory + LLM 要約連携 |
+| Step 4 | Embedding 検索（Qdrant）、家族スコープ、感情タグ |
+
+詳細タスクは `docs/project/phase10-tasklist.md` を参照。
 
 ---
 

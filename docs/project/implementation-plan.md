@@ -45,6 +45,8 @@
 | 7 | WebUI と可観測性 | 設定 UI、診断、ランタイム可視化 | 運用者がシステムの確認とテストを実施できる |
 | 8 | 統合と運用 | Docker、マイグレーション、CI、障害復旧強化 | 開発運用と実行運用が再現可能である |
 | 9 | LLM 実装と会話コンテキスト統合 | OpenAI Chat Completions、Persona 設定、会話履歴管理、LLM テスト導線 | OpenAI LLM が応答し、UI から Persona 設定可能である |
+| 10 | 識別とメモリー運用基盤 | 複数デバイス識別、長期記憶キー設計、記憶ガバナンス、評価導線 | セッション外記憶が安全かつ再現可能に運用できる |
+| 11 | Firmware ハードウェア制御と診断導線 | デバイス抽象化、制御イベント、Hardware Test UI、状態レポート | WebUI から安全にハードウェア診断・校正・疎通確認を実施できる |
 
 ## 5. フェーズ詳細
 
@@ -129,6 +131,26 @@
 - WebUI から LLM 単体テストと Stackchan 連携テストを実行可能にします。
 - LLM 関連の障害復旧ランブックを追加します。
 - 実行タスクは docs/project/phase09-tasklist.md で管理します。
+
+### フェーズ 10. 識別とメモリー運用基盤
+
+- 複数 Stackchan 同時接続を前提に、識別キーの責務分離を明確化します（session_id / device_id / request_id）。
+- 5 種類の記憶タイプ（Session / Episodic / Semantic / Profile / Reflection）を段階的に構築します。
+- Memory Orchestrator を中核に、ContextBundle 組み立て・PostProcess・セッション要約フローを実装します。
+- 記憶取得は keywordスコアリング（将来は vector 検索）を基本にし、importance / confidence / recency で重み付けします。
+- memory_facts / memories / profiles の DB スキーマを追加し、sessions に device_id を永続化します。
+- 記憶ガバナンス（TTL/削除 API/監査ログ）と WebUI 運用導線を整備します。
+- 実行タスクは docs/project/phase10-tasklist.md で管理します。
+
+### フェーズ 11. Firmware ハードウェア制御と診断導線
+
+- firmware 内のハードウェア責務を runtime / app 配下のサービスへ分離し、StackchanSession はイベント受信と委譲に集中させます。
+- WebSocket protocol に device 制御イベントを追加し、LED、耳 NeoPixel、サーボ、音声テスト、マイク計測、カメラ取得、状態報告を契約化します。
+- WebUI は本番設定画面として肥大化させる前に、Hardware Test を中心とした診断コンソールとして拡張します。
+- server には WebUI から接続中 Stackchan へ制御を中継するテスト API を追加し、既存の UI -> server -> Stackchan の流れを再利用します。
+- サーボ制御は raw angle 直指定より先に logical angle + calibration + safety limit の二層モデルを導入し、個体差調整と破損防止を優先します。
+- low-level の device.servo.move と high-level の motion.play を分離し、診断用制御と演出用動作を混線させません。
+- 実行タスクは docs/project/phase11-tasklist.md で管理します。
 
 ## 6. PDCA 運用モデル
 
@@ -224,6 +246,25 @@
 | P8-15 | firmware に事前バッファ付き再生パイプラインを導入 | 中 | Copilot | P8-14 | 60〜120ms 事前バッファ、low-water/high-water、リングバッファ消費を導入 | 完了 |
 | P8-16 | tts.chunk の欠落/遅延検知と concealment 方針を導入 | 中 | Copilot | P8-15 | sequence/timestamp 管理と欠落時の補完方針を追加 | 完了 |
 | P8-17 | 音声再生処理を専用消費ループへ分離 | 中 | Copilot | P8-15 | 通信受信と再生処理を分離し、将来の低遅延化に備える | 完了 |
+| P10-01 | 識別キー方針を protocol と server へ明文化 | 高 | Copilot | P9-06 | session_id（接続）、device_id（個体）、request_id（ターン）の責務を固定し、衝突時ルールを定義 | 未着手 |
+| P10-02 | sessions に device_id / user_id を追加 | 高 | Copilot | P10-01 | migration 追加、handshake 更新、session 再接続時に同一デバイス追跡可能化 | 未着手 |
+| P10-03 | Profile Memory スキーマと CRUD API | 高 | Copilot | P10-02 | profiles テーブル、GET/PUT /api/memory/profile、WebUI 設定画面 | 未着手 |
+| P10-04 | Semantic Memory（memory_facts）スキーマと初期抽出 | 高 | Copilot | P10-02 | memory_facts テーブル、FactRepository、ルールベース Extractor | 未着手 |
+| P10-05 | Memory Orchestrator の骨組み実装 | 高 | Copilot | P10-03, P10-04 | orchestrator.go、ContextBundle、Prompt Builder の骨組み | 未着手 |
+| P10-06 | セッション要約機能 | 中 | Copilot | P10-05 | Summarizer、sessions.last_summary 更新、20 メッセージ／トークン閾値トリガー | 未着手 |
+| P10-07 | Episodic Memory スキーマと保存 | 中 | Copilot | P10-05 | memories テーブル（type=episode）、PostProcess 連携 | 未着手 |
+| P10-08 | 記憶 Retriever のスコアリング実装 | 中 | Copilot | P10-07 | retriever.go、scorer.go、importance/confidence/recency の重み計算 | 未着手 |
+| P10-09 | 同時接続制御と認可検証 | 高 | Copilot | P10-01 | 同一 device_id 接続ポリシー（reject/kick）、エラーイベント設計 | 未着手 |
+| P10-10 | Reflection Memory と LLM 要約連携 | 低 | Copilot | P10-06 | Summarizer の LLM 連携、memories type=reflection 保存 | 未着手 |
+| P10-11 | 記憶ガバナンス実装 | 高 | Copilot | P10-04 | TTL 設定、削除 API、論理削除、監査ログ | 未着手 |
+| P10-12 | WebUI 記憶管理導線 | 中 | Copilot | P10-11 | 記憶参照・削除 UI、facts 編集 UI、テスト API | 未着手 |
+| P10-13 | 記憶品質評価と回帰テスト | 中 | Copilot | P10-08 | key fact 再現テスト、誤想起テスト、CI 組込 | 未着手 |
+| P10-14 | ランブックと監査導線の整備 | 中 | Copilot | P10-11, P10-09 | memory 運用 runbook、障害切り分け手順、アクセスログ確認手順 | 未着手 |
+| P11-01 | firmware のハードウェア責務をサービスへ分離 | 高 | Copilot | P8-17 | servo / lighting / touch / camera の責務を StackchanSession から外し、委譲中心へ整理 | 未着手 |
+| P11-02 | device 制御イベントを protocol v0 に追加 | 高 | Copilot | P11-01 | device.led.set / device.ears.set / device.servo.move / device.state.report などを schema-first で定義 | 未着手 |
+| P11-03 | server に hardware test API を追加 | 高 | Copilot | P11-02 | WebUI から接続中セッションへ制御を中継する API 群を実装 | 未着手 |
+| P11-04 | WebUI Hardware Test 画面を追加 | 高 | Copilot | P11-03 | Servo / LED / Audio / Camera の即時診断導線を実装 | 未着手 |
+| P11-05 | firmware 状態レポートと診断ログを強化 | 中 | Copilot | P11-03 | RSSI / heap / angle / calibration / mic level / speaker busy を可視化へ接続 | 未着手 |
 
 ## 11. 意思決定ログ
 

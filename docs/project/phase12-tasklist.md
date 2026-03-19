@@ -94,7 +94,7 @@ firmware/app/stackchan/
 
 | ID | タスク | 成果物 | 優先度 | 理由 | ステータス |
 | --- | --- | --- | --- | --- | --- |
-| P12-01 | StackchanSession の責務マップと依存一覧を作成 | 責務一覧、状態一覧、メモリ所有権メモ、分割方針 | 高 | 先に壊れやすい依存を可視化しないと、分割時に責務漏れが起きやすいため | 未着手 |
+| P12-01 | StackchanSession の責務マップと依存一覧を作成 | 責務一覧、状態一覧、メモリ所有権メモ、分割方針 | 高 | 先に壊れやすい依存を可視化しないと、分割時に責務漏れが起きやすいため | 完了（docs/project/phase12-p12-01-responsibility-map.md） |
 | P12-02 | 実装ファイル分割の境界を定義 | file split 案、各 .cpp の責務、include 方針 | 高 | public API を維持したまま安全に分けるには、先に境界を固定する必要があるため | 未着手 |
 | P12-03 | connection / lifecycle 実装を分離 | session_connection.cpp、接続関連ロジック整理 | 中 | begin / loop / heartbeat を他責務から分け、以後の差分を局所化するため | 未着手 |
 | P12-04 | protocol send / receive 実装を分離 | session_protocol.cpp、dispatch 整理、handler 配置 | 高 | 受信イベント拡張時に session.cpp 本体が再肥大化するのを防ぐため | 未着手 |

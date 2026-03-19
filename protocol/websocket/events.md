@@ -20,6 +20,10 @@
 - tts.stop （フェーズ 8 追加）
 - audio.stream_abort （フェーズ 8 追加）
 - tts.buffer.watermark （フェーズ 8/P8-19 追加）
+- device.servo.move （フェーズ 11/P11-05 追加）
+- device.servo.calibration.get （フェーズ 11/P11-05 追加）
+- device.servo.calibration.set （フェーズ 11/P11-05 追加）
+- device.servo.calibration.response （フェーズ 11/P11-05 追加）
 
 ## 2. Common Envelope
 
@@ -124,6 +128,15 @@
 - conversation.cancel 受信時に active conversation が存在しない場合: `invalid_payload`（message: "no active conversation to cancel"）
 - tts.stop 対象の再生が存在しない場合: `invalid_payload`（message: "no active tts playback to stop"）
 - audio.stream_abort の stream_id が未登録の場合: `invalid_payload`（message: "audio stream not found"）
+
+### 4.3 device.servo 系 error codes (フェーズ 11)
+
+- device.servo.move で axis=x なのに angle_x_deg が存在しない場合: `invalid_payload`（message: "angle_x_deg required when axis=x"）
+- device.servo.move で axis=y なのに angle_y_deg が存在しない場合: `invalid_payload`（message: "angle_y_deg required when axis=y"）
+- device.servo.move で axis=both なのに angle_x_deg/angle_y_deg の一方が存在しない場合: `invalid_payload`（message: "both angle_x_deg and angle_y_deg required when axis=both"）
+- device.servo.calibration.set で min_deg >= max_deg の場合: `invalid_payload`（message: "min_deg must be less than max_deg"）
+- calibration の不揮発保存に失敗した場合: `device_error`（message: "servo calibration save failed", retryable: true）
+- 未接続のセッションへ servo コマンドが届いた場合: `session_not_found`（message: "no active stackchan session found"）
 
 ## 5. フェーズ 4 追加イベント
 
@@ -269,6 +282,73 @@
 - 送信タイミング: watermark 状態が変化した時点のみ（low_water 持続中の連続送信は禁止）
 - 送信レート制限: 同一状態での再送は500ms 以上間隔を空ける
 
+## 5.12 device.servo.move（P11-05）
+
+- Direction: server -> firmware
+- Purpose: X/Y 軸のサーボを指定した論理角度へ移動する。firmware が校正値（center_offset_deg / min_deg / max_deg / invert / speed_limit_deg_per_sec）を適用して実角度へ変換する
+- JSON Schema: `protocol/websocket/schemas/device.servo.move.schema.json`
+- Example: `protocol/examples/device.servo.move.example.json`
+- Payload fields:
+  - request_id: string (optional) — 診断・ログ用相関 ID
+  - axis: string (required, enum: x, y, both) — 移動軸。x=水平（左右）、y=垂直（上下）、both=両軸同時
+  - angle_x_deg: number (optional, -90–90) — X 軸目標論理角度（度）。axis=x または both の場合は必須
+  - angle_y_deg: number (optional, -90–90) — Y 軸目標論理角度（度）。axis=y または both の場合は必須
+  - speed: number (optional, 0.1–3.0) — 速度倍率。校正値の speed_limit_deg_per_sec が絶対上限
+- Safety rule: firmware は angle を [min_deg, max_deg] でクランプしてから校正値を適用する。クランプが発生した場合は warning ログを出力する
+- Event role: control command（即時反映、ack なし。エラー時のみ error イベント）
+
+## 5.13 device.servo.calibration.get（P11-05）
+
+- Direction: server -> firmware
+- Purpose: firmware が保持している現在のサーボ校正値を request/response パターンで取得する
+- JSON Schema: `protocol/websocket/schemas/device.servo.calibration.get.schema.json`
+- Example: `protocol/examples/device.servo.calibration.get.example.json`
+- Payload fields:
+  - request_id: string (required) — device.servo.calibration.response で mirror して返す相関 ID
+- Response: `device.servo.calibration.response`（同一 session_id で firmware から送信）
+- Event role: request/response。firmware は受信後なるべく速やかに response を返す
+
+## 5.14 device.servo.calibration.set（P11-05）
+
+- Direction: server -> firmware
+- Purpose: 校正値を差分更新し、不揮発ストレージ（Preferences / SPIFFS 等）へ保存する
+- JSON Schema: `protocol/websocket/schemas/device.servo.calibration.set.schema.json`
+- Example: `protocol/examples/device.servo.calibration.set.example.json`
+- Payload fields:
+  - request_id: string (required) — 診断・ログ用相関 ID
+  - axis: string (required, enum: x, y) — 更新対象の軸
+  - center_offset_deg: number (optional, -45–45) — 機体中央のズレ補正値（度）
+  - min_deg: number (optional, -90–0) — 論理角度の最小値（度）
+  - max_deg: number (optional, 0–90) — 論理角度の最大値（度）
+  - invert: boolean (optional) — サーボ回転方向の反転フラグ
+  - speed_limit_deg_per_sec: number (optional, 1–360) — 角速度の上限（度/秒）
+  - soft_start: boolean (optional) — スムーズな加減速（ソフトスタート）フラグ
+  - home_deg: number (optional, -90–90) — この軸のホーム位置（論理角度）
+- Constraint: min_deg < max_deg を firmware 側でも検証し、違反時は error イベントを返す
+- Semantics: 差分更新。省略フィールドは現在値を保持する。保存後に設定を即時反映する
+- Event role: control command（保存成功は ack なし、保存失敗時は error イベント）
+
+## 5.15 device.servo.calibration.response（P11-05）
+
+- Direction: firmware -> server
+- Purpose: device.servo.calibration.get への応答。現在の校正値と現在角度を返す
+- JSON Schema: `protocol/websocket/schemas/device.servo.calibration.response.schema.json`
+- Example: `protocol/examples/device.servo.calibration.response.example.json`
+- Payload fields:
+  - request_id: string (required) — device.servo.calibration.get の request_id をそのまま返す
+  - x: object (required) — X 軸の校正値（ServoAxisCalibration）
+  - y: object (required) — Y 軸の校正値（ServoAxisCalibration）
+  - current_angle_x_deg: number (optional, -90–90) — 現在の X 軸論理角度（診断用）
+  - current_angle_y_deg: number (optional, -90–90) — 現在の Y 軸論理角度（診断用）
+- ServoAxisCalibration 共通フィールド（x/y 共通）:
+  - center_offset_deg: number (required, -45–45)
+  - min_deg: number (required, -90–0)
+  - max_deg: number (required, 0–90)
+  - invert: boolean (required)
+  - speed_limit_deg_per_sec: number (required, 1–360)
+  - soft_start: boolean (required)
+  - home_deg: number (required, -90–90)
+
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 
 ### 6.1 バイナリ WebSocket フレームの構造
@@ -296,6 +376,14 @@ audio.stream_open 後に送信するバイナリ WebSocket フレームの構造
 - 受信側が未知イベントを受けた場合は、warning ログを残して無視してよい（v0 運用の後方互換ポリシー）。
 - interrupt 導入前の実装と共存するため、`request_id` は optional とし active request 解決を許容する。
 - rollout 順序は server 先行（受理のみ） -> firmware 送受信対応 -> strict validation 有効化とする。
+
+### 7.2 フェーズ 11 互換性メモ（device.servo 系）
+
+- `device.servo.move` / `device.servo.calibration.get` / `device.servo.calibration.set` / `device.servo.calibration.response` はすべて新規イベント追加であり、既存イベントの required フィールドは変更しない。
+- 旧 firmware が未知イベントを受信した場合は、warning ログを残して無視してよい（v0 の後方互換ポリシーを継承）。
+- サーボ未実装の firmware と共存するため、`device.servo.calibration.get` に対して response が返らない場合は server 側でタイムアウト（推奨: 3 秒）してエラーとして扱う。
+- rollout 順序は protocol 定義（P11-05） -> firmware ServoController 実装（P11-02） -> server hardware test API（P11-11） -> WebUI（P11-12）とする。
+- `device.servo.calibration.set` の差分更新セマンティクス（省略フィールドは現在値保持）は v0 内の additive change として許容する。
 
 ## 8. Deferred Candidates
 

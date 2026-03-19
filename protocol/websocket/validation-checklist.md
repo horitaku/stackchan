@@ -19,6 +19,15 @@
 - conversation.cancel の reason/source が存在する
 - tts.stop の reason が存在する
 - audio.stream_abort の stream_id/reason が存在する
+- device.servo.move の axis が存在する
+- device.servo.move で axis=x のとき angle_x_deg が存在する
+- device.servo.move で axis=y のとき angle_y_deg が存在する
+- device.servo.move で axis=both のとき angle_x_deg と angle_y_deg の両方が存在する
+- device.servo.calibration.get の request_id が存在する
+- device.servo.calibration.set の request_id と axis が存在する
+- device.servo.calibration.set で min_deg < max_deg である（設定された場合）
+- device.servo.calibration.response の request_id / x / y が存在する
+- device.servo.calibration.response の x/y に required フィールド（center_offset_deg / min_deg / max_deg / invert / speed_limit_deg_per_sec / soft_start / home_deg）がすべて存在する
 
 ## Sequence and Ordering
 

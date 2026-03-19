@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "device.servo.move",
+  "description": "サーボ X/Y 軸の論理角度移動指示イベント（server -> firmware）。firmware は校正値を適用して実角度へ変換する。",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type":       { "const": "device.servo.move" },
+    "timestamp":  { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence":   { "type": "integer", "minimum": 1 },
+    "version":    { "const": "1.0" },
+    "payload":    { "$ref": "#/definitions/DeviceServoMovePayload" }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DeviceServoMovePayload": {
+      "type": "object",
+      "required": ["axis"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "診断・ログ用の相関 ID（任意）"
+        },
+        "axis": {
+          "type": "string",
+          "enum": ["x", "y", "both"],
+          "description": "移動軸。x=水平（左右）、y=垂直（上下）、both=両軸同時"
+        },
+        "angle_x_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "X 軸の目標論理角度（度）。0=中央。axis=x または both の場合に使用。firmware 側の min_deg/max_deg/center_offset_deg 校正値でクランプされる。"
+        },
+        "angle_y_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "Y 軸の目標論理角度（度）。0=中央。axis=y または both の場合に使用。firmware 側の min_deg/max_deg/center_offset_deg 校正値でクランプされる。"
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 3.0,
+          "description": "速度倍率（任意）。校正値の speed_limit_deg_per_sec が絶対上限として適用される。"
+        }
+      },
+      "if":   { "properties": { "axis": { "const": "x" } } },
+      "then": { "required": ["angle_x_deg"] },
+      "else": {
+        "if":   { "properties": { "axis": { "const": "y" } } },
+        "then": { "required": ["angle_y_deg"] },
+        "else": { "required": ["angle_x_deg", "angle_y_deg"] }
+      }
+    }
+  }
+}

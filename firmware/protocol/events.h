@@ -47,6 +47,18 @@ constexpr const char* MOTION_PLAY        = "motion.play";
 /// エラー通知（双方向）
 constexpr const char* ERROR_EVENT        = "error";
 
+// ── Server → Firmware （ハードウェア制御、P11-05） ───────────────────────────
+/// サーボ Y/X 軸を指定論理角度へ移動する（firmware が校正値を適用）
+constexpr const char* DEVICE_SERVO_MOVE              = "device.servo.move";
+/// 現在のサーボ校正値を要求する（firmware が calibration.response を返す）
+constexpr const char* DEVICE_SERVO_CALIBRATION_GET   = "device.servo.calibration.get";
+/// 校正値を差分更新し不揮発ストレージへ保存する
+constexpr const char* DEVICE_SERVO_CALIBRATION_SET   = "device.servo.calibration.set";
+
+// ── Firmware → Server （ハードウェア応答、P11-05） ──────────────────────
+/// calibration.get への応答（校正値 + 現在角度）
+constexpr const char* DEVICE_SERVO_CALIBRATION_RESPONSE = "device.servo.calibration.response";
+
 }  // namespace EventType
 
 /// このファームウェアが使用するプロトコルバージョン（events.md と一致させること）

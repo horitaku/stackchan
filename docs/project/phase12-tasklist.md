@@ -97,7 +97,7 @@ firmware/app/stackchan/
 | P12-01 | StackchanSession の責務マップと依存一覧を作成 | 責務一覧、状態一覧、メモリ所有権メモ、分割方針 | 高 | 先に壊れやすい依存を可視化しないと、分割時に責務漏れが起きやすいため | 完了（docs/project/phase12-p12-01-responsibility-map.md） |
 | P12-02 | 実装ファイル分割の境界を定義 | file split 案、各 .cpp の責務、include 方針 | 高 | public API を維持したまま安全に分けるには、先に境界を固定する必要があるため | 完了（docs/project/phase12-p12-02-file-split-boundary.md） |
 | P12-03 | connection / lifecycle 実装を分離 | session_connection.cpp、接続関連ロジック整理 | 中 | begin / loop / heartbeat を他責務から分け、以後の差分を局所化するため | 完了（firmware/app/stackchan/session_connection.cpp） |
-| P12-04 | protocol send / receive 実装を分離 | session_protocol.cpp、dispatch 整理、handler 配置 | 高 | 受信イベント拡張時に session.cpp 本体が再肥大化するのを防ぐため | 未着手 |
+| P12-04 | protocol send / receive 実装を分離 | session_protocol.cpp、dispatch 整理、handler 配置 | 高 | 受信イベント拡張時に session.cpp 本体が再肥大化するのを防ぐため | 完了（firmware/app/stackchan/session_protocol.cpp） |
 | P12-05 | audio uplink 実装を分離 | session_audio_upload.cpp、sendAudioStream 周辺の整理 | 中 | uplink と playback の責務を分け、音声入出力の変更点を追いやすくするため | 未着手 |
 | P12-06 | TTS ストリーム処理を分離 | session_tts_stream.cpp、queue / concealment / watermark / opus decode | 高 | 現在もっとも状態量が多く、保守負荷が高い領域であるため | 未着手 |
 | P12-07 | Avatar / motion 表示処理を分離 | session_avatar.cpp、expression / motion / lip sync 更新 | 中 | hardware control と avatar behavior の分離方針に沿って見通しを改善するため | 未着手 |

@@ -1,0 +1,14 @@
+{
+  "type": "device.led.set",
+  "timestamp": "2025-06-15T10:00:00.000Z",
+  "session_id": "sess-abc123",
+  "sequence": 42,
+  "version": "1.0",
+  "payload": {
+    "request_id": "req-led-001",
+    "mode": "breathe",
+    "color": "#00BFFF",
+    "brightness": 180,
+    "breathe_period_ms": 2000
+  }
+}

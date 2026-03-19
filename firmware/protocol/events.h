@@ -59,6 +59,12 @@ constexpr const char* DEVICE_SERVO_CALIBRATION_SET   = "device.servo.calibration
 /// calibration.get への応答（校正値 + 現在角度）
 constexpr const char* DEVICE_SERVO_CALIBRATION_RESPONSE = "device.servo.calibration.response";
 
+// ── Server → Firmware （LED/NeoPixel 制御、P11-06） ─────────────────────
+/// M5GO Bottom3 の RGB LED を制御する（必須ハードウェア）
+constexpr const char* DEVICE_LED_SET  = "device.led.set";
+/// NECO MIMI（NeoPixel）を制御する（オプションハードウェア：未接続時は警告ログのみ）
+constexpr const char* DEVICE_EARS_SET = "device.ears.set";
+
 }  // namespace EventType
 
 /// このファームウェアが使用するプロトコルバージョン（events.md と一致させること）

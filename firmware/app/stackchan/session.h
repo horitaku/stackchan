@@ -36,6 +36,7 @@
 #include "../../runtime/network/ws_client.h"
 #include "../../runtime/audio/mic_reader.h"
 #include "../../runtime/audio/tts_player.h"
+#include "../../runtime/actuators/servo_controller.h"
 #include "../../protocol/envelope.h"
 #include "../../protocol/events.h"
 
@@ -103,6 +104,7 @@ class StackchanSession {
   Network::WsClient  _ws;
   Audio::MicReader   _mic;
   Audio::TTSPlayer   _ttsPlayer;
+  Actuator::ServoController _servo;  ///< P11-08: サーボ X/Y 制御サービス
   Protocol::OutboundSequence _seq;
 
   SessionState  _state{SessionState::Idle};
@@ -228,6 +230,23 @@ class StackchanSession {
   void handleTTSStop(const String& payloadJson);
   void handleAudioStreamAbort(const String& payloadJson);
   void handleError(const String& payloadJson);
+
+  // ── P11-08: ハードウェア制御イベントハンドラー ──────────────────────────
+  // device.servo.* を受信したときに ServoController へ委譲します。
+  // 各ハンドラーは session_hardware.cpp に実装します。
+
+  /// device.servo.move: 論理角度移動指示
+  void handleDeviceServoMove(const String& payloadJson);
+  /// device.servo.calibration.get: 校正値の読み出し要求
+  void handleDeviceServoCalibrationGet(const String& payloadJson);
+  /// device.servo.calibration.set: 校正値の更新・保存
+  void handleDeviceServoCalibrationSet(const String& payloadJson);
+
+  /// device.servo.calibration.response を firmware → server へ送信します。
+  void sendServoCalibrationResponse(const String& requestId);
+
+  /// hardware コマンドのエラーを server へ通知する共通ヘルパー。
+  void sendDeviceError(const String& requestId, const char* code, const char* message, bool retryable = false);
   void clearIncomingTTSBuffer();
   bool appendIncomingTTSChunk(const String& requestId, int chunkIndex, int totalChunks, const String& audioBase64);
   void clearTTSFrameQueue();

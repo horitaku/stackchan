@@ -115,6 +115,10 @@ void StackchanSession::onTextMessage(const String& msg) {
     {Protocol::EventType::TTS_STOP, &StackchanSession::handleTTSStop},
     {Protocol::EventType::AUDIO_STREAM_ABORT, &StackchanSession::handleAudioStreamAbort},
     {Protocol::EventType::ERROR_EVENT, &StackchanSession::handleError},
+    // P11-08: device.servo.* イベントを ServoController に委譲します
+    {Protocol::EventType::DEVICE_SERVO_MOVE,            &StackchanSession::handleDeviceServoMove},
+    {Protocol::EventType::DEVICE_SERVO_CALIBRATION_GET, &StackchanSession::handleDeviceServoCalibrationGet},
+    {Protocol::EventType::DEVICE_SERVO_CALIBRATION_SET, &StackchanSession::handleDeviceServoCalibrationSet},
   };
 
   JsonDocument doc;

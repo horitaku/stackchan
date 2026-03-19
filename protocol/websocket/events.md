@@ -24,6 +24,8 @@
 - device.servo.calibration.get （フェーズ 11/P11-05 追加）
 - device.servo.calibration.set （フェーズ 11/P11-05 追加）
 - device.servo.calibration.response （フェーズ 11/P11-05 追加）
+- device.led.set （フェーズ 11/P11-06 追加）
+- device.ears.set （フェーズ 11/P11-06 追加、NECO MIMI オプション）
 
 ## 2. Common Envelope
 
@@ -137,6 +139,12 @@
 - device.servo.calibration.set で min_deg >= max_deg の場合: `invalid_payload`（message: "min_deg must be less than max_deg"）
 - calibration の不揮発保存に失敗した場合: `device_error`（message: "servo calibration save failed", retryable: true）
 - 未接続のセッションへ servo コマンドが届いた場合: `session_not_found`（message: "no active stackchan session found"）
+
+### 4.4 device.led / device.ears 系 error codes（フェーズ 11）
+
+- device.led.set で mode=solid/blink/breathe なのに color が省略されている場合: `invalid_payload`（message: "color required for mode solid/blink/breathe"）
+- device.ears.set で mode=solid/blink/breathe なのに color が省略されている場合: `invalid_payload`（message: "color required for mode solid/blink/breathe"）
+- NECO MIMI が未接続の場合（device.ears.set): firmware は warning ログを出力し、エラーは返さない（silent ignore ポリシー）
 
 ## 5. フェーズ 4 追加イベント
 
@@ -349,6 +357,38 @@
   - soft_start: boolean (required)
   - home_deg: number (required, -90–90)
 
+## 5.16 device.led.set（P11-06）
+
+- Direction: server -> firmware
+- Purpose: M5GO Bottom3 の RGB LED の点灯パターンと色を制御する
+- JSON Schema: `protocol/websocket/schemas/device.led.set.schema.json`
+- Example: `protocol/examples/device.led.set.example.json`
+- Payload fields:
+  - request_id: string (optional) — 診断・ログ用相関 ID
+  - mode: string (required, enum: off, solid, blink, breathe) — 点灯パターン
+  - color: string (optional, pattern: #RRGGBB) — RGB カラーコード。mode=solid/blink/breathe の場合は必須
+  - brightness: integer (optional, 0–255) — 輝度。省略時は firmware のデフォルト値
+  - blink_interval_ms: integer (optional, 50–5000) — blink モード時の点滅間隔（ms）
+  - breathe_period_ms: integer (optional, 200–10000) — breathe モード時の明暗 1 周期（ms）
+- Event role: control command（即時反映、ack なし。バリデーションエラー時のみ error イベント）
+
+## 5.17 device.ears.set（P11-06）
+
+- Direction: server -> firmware
+- Purpose: NECO MIMI（NeoPixel）の点灯パターンと色を制御する。NECO MIMI はオプションハードウェアのため、未接続時は firmware が warning ログを出力し、エラーは返さない
+- JSON Schema: `protocol/websocket/schemas/device.ears.set.schema.json`
+- Example: `protocol/examples/device.ears.set.example.json`
+- Payload fields:
+  - request_id: string (optional) — 診断・ログ用相関 ID
+  - mode: string (required, enum: off, solid, blink, breathe, rainbow) — 点灯パターン。rainbow=レインボーサイクル
+  - color: string (optional, pattern: #RRGGBB) — RGB カラーコード。mode=solid/blink/breathe の場合は必須
+  - brightness: integer (optional, 0–255) — 輝度。省略時は firmware のデフォルト値
+  - blink_interval_ms: integer (optional, 50–5000) — blink モード時の点滅間隔（ms）
+  - breathe_period_ms: integer (optional, 200–10000) — breathe モード時の明暗 1 周期（ms）
+  - rainbow_period_ms: integer (optional, 200–30000) — rainbow モード時の色相 1 周期（ms）
+- Optional hardware policy: firmware は `#ifdef FW_NECO_MIMI_ENABLED` ガードでコンパイル時に有効/無効を切り替える。実行時に未接続の場合は warning ログのみ出力し、エラーは送信しない
+- Event role: control command（即時反映、ack なし）
+
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 
 ### 6.1 バイナリ WebSocket フレームの構造
@@ -384,6 +424,14 @@ audio.stream_open 後に送信するバイナリ WebSocket フレームの構造
 - サーボ未実装の firmware と共存するため、`device.servo.calibration.get` に対して response が返らない場合は server 側でタイムアウト（推奨: 3 秒）してエラーとして扱う。
 - rollout 順序は protocol 定義（P11-05） -> firmware ServoController 実装（P11-02） -> server hardware test API（P11-11） -> WebUI（P11-12）とする。
 - `device.servo.calibration.set` の差分更新セマンティクス（省略フィールドは現在値保持）は v0 内の additive change として許容する。
+
+### 7.3 フェーズ 11 互換性メモ（device.led / device.ears 系）
+
+- `device.led.set` / `device.ears.set` はすべて新規イベント追加であり、既存イベントの required フィールドは変更しない。
+- NECO MIMI 未接続機では `device.ears.set` を silent ignore するため、server 側は response を期待しない（fire-and-forget）。
+- `FW_NECO_MIMI_ENABLED` コンパイルフラグで NECO MIMI 対応を有効/無効化できる。未定義時は無効扱いとし、ランタイム警告だけ出す実装でもよい。
+- rollout 順序は protocol 定義（P11-06） -> firmware LedController / EarsController 実装（P11-03） -> server hardware test API（P11-11） -> WebUI（P11-12）とする。
+- 既存 firmware がこれらのイベントを受け取っても warning ログを残して無視してよい（v0 の後方互換ポリシーを継承）。
 
 ## 8. Deferred Candidates
 

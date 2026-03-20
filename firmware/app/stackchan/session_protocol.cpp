@@ -119,6 +119,9 @@ void StackchanSession::onTextMessage(const String& msg) {
     {Protocol::EventType::DEVICE_SERVO_MOVE,            &StackchanSession::handleDeviceServoMove},
     {Protocol::EventType::DEVICE_SERVO_CALIBRATION_GET, &StackchanSession::handleDeviceServoCalibrationGet},
     {Protocol::EventType::DEVICE_SERVO_CALIBRATION_SET, &StackchanSession::handleDeviceServoCalibrationSet},
+    // P11-03: device.led.* / device.ears.* を Lighting コントローラーへ委譲します
+    {Protocol::EventType::DEVICE_LED_SET,               &StackchanSession::handleDeviceLedSet},
+    {Protocol::EventType::DEVICE_EARS_SET,              &StackchanSession::handleDeviceEarsSet},
   };
 
   JsonDocument doc;

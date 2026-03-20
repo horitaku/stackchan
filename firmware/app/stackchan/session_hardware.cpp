@@ -309,4 +309,147 @@ void StackchanSession::sendServoCalibrationResponse(const String& requestId) {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// device.led.set ハンドラー
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief device.led.set イベントを BaseLedController へ委譲します。
+ *
+ * @section バリデーション
+ * - mode は "off" / "solid" / "blink" / "breathe" のいずれか（必須）
+ * - mode=solid / blink / breathe のとき color が必須（#RRGGBB 形式）
+ *
+ * @section エラー時の動作
+ * 必須フィールド不足・mode 不正時は invalid_payload を送信します。
+ * LED コントローラーが未初期化の場合は device_error を送信します。
+ */
+void StackchanSession::handleDeviceLedSet(const String& payloadJson) {
+  if (!_led.available()) {
+    Serial.println("[HWCmd] led.set: LED controller not ready");
+    sendDeviceError("", "device_error", "LED controller not ready", false);
+    return;
+  }
+
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* requestId = payload["request_id"] | "";
+  const char* modeStr   = payload["mode"] | "";
+
+  // mode の enum バリデーション
+  Lighting::LedMode mode;
+  if      (strcmp(modeStr, "off")     == 0) { mode = Lighting::LedMode::Off;     }
+  else if (strcmp(modeStr, "solid")   == 0) { mode = Lighting::LedMode::Solid;   }
+  else if (strcmp(modeStr, "blink")   == 0) { mode = Lighting::LedMode::Blink;   }
+  else if (strcmp(modeStr, "breathe") == 0) { mode = Lighting::LedMode::Breathe; }
+  else {
+    Serial.printf("[HWCmd] led.set: invalid mode='%s'\n", modeStr);
+    sendDeviceError(requestId, "invalid_payload",
+      "mode must be 'off', 'solid', 'blink', or 'breathe'", false);
+    return;
+  }
+
+  // color の検証（solid/blink/breathe では必須）
+  uint32_t colorRGB = 0;
+  if (mode != Lighting::LedMode::Off) {
+    const char* colorStr = payload["color"] | "";
+    if (colorStr[0] == '\0') {
+      sendDeviceError(requestId, "invalid_payload",
+        "color required for mode solid/blink/breathe", false);
+      return;
+    }
+    // "#RRGGBB" を 0xRRGGBB に変換します
+    if (colorStr[0] == '#' && strlen(colorStr) == 7) {
+      colorRGB = strtoul(colorStr + 1, nullptr, 16);
+    } else {
+      sendDeviceError(requestId, "invalid_payload",
+        "color must be in #RRGGBB format", false);
+      return;
+    }
+  }
+
+  const uint8_t  brightness      = (uint8_t) (payload["brightness"]        | 128);
+  const uint16_t blinkIntervalMs = (uint16_t)(payload["blink_interval_ms"] | 500);
+  const uint16_t breathePeriodMs = (uint16_t)(payload["breathe_period_ms"] | 2000);
+
+  Serial.printf("[HWCmd] led.set: mode=%s rgb=0x%06X brightness=%d request_id=%s\n",
+    modeStr, (unsigned)colorRGB, brightness, requestId);
+
+  _led.setMode(mode, colorRGB, brightness, blinkIntervalMs, breathePeriodMs);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// device.ears.set ハンドラー
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief device.ears.set イベントを EarNeoPixelController へ委譲します。
+ *
+ * @section オプションハードウェアポリシー
+ * NECO MIMI が未接続（FW_NECO_MIMI_ENABLED=0）の場合、
+ * available() が false を返すため warning ログのみ出力して正常終了します。
+ * server にはエラーを送信しません（silent ignore ポリシー）。
+ *
+ * @section バリデーション
+ * - mode は "off" / "solid" / "blink" / "breathe" / "rainbow" のいずれか（必須）
+ * - mode=solid / blink / breathe のとき color が必須（#RRGGBB 形式）
+ * - mode=rainbow のとき color は省略可
+ */
+void StackchanSession::handleDeviceEarsSet(const String& payloadJson) {
+  // NECO MIMI が未接続の場合は silent ignore（エラー送信なし）
+  if (!_ear.available()) {
+    Serial.println("[HWCmd] ears.set: NECO MIMI not available, ignored");
+    return;
+  }
+
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* requestId = payload["request_id"] | "";
+  const char* modeStr   = payload["mode"] | "";
+
+  // mode の enum バリデーション
+  Lighting::EarMode mode;
+  if      (strcmp(modeStr, "off")     == 0) { mode = Lighting::EarMode::Off;     }
+  else if (strcmp(modeStr, "solid")   == 0) { mode = Lighting::EarMode::Solid;   }
+  else if (strcmp(modeStr, "blink")   == 0) { mode = Lighting::EarMode::Blink;   }
+  else if (strcmp(modeStr, "breathe") == 0) { mode = Lighting::EarMode::Breathe; }
+  else if (strcmp(modeStr, "rainbow") == 0) { mode = Lighting::EarMode::Rainbow; }
+  else {
+    Serial.printf("[HWCmd] ears.set: invalid mode='%s'\n", modeStr);
+    sendDeviceError(requestId, "invalid_payload",
+      "mode must be 'off', 'solid', 'blink', 'breathe', or 'rainbow'", false);
+    return;
+  }
+
+  // color の検証（solid/blink/breathe では必須。rainbow は省略可）
+  uint32_t colorRGB = 0;
+  if (mode != Lighting::EarMode::Off && mode != Lighting::EarMode::Rainbow) {
+    const char* colorStr = payload["color"] | "";
+    if (colorStr[0] == '\0') {
+      sendDeviceError(requestId, "invalid_payload",
+        "color required for mode solid/blink/breathe", false);
+      return;
+    }
+    if (colorStr[0] == '#' && strlen(colorStr) == 7) {
+      colorRGB = strtoul(colorStr + 1, nullptr, 16);
+    } else {
+      sendDeviceError(requestId, "invalid_payload",
+        "color must be in #RRGGBB format", false);
+      return;
+    }
+  }
+
+  const uint8_t  brightness      = (uint8_t) (payload["brightness"]         | 128);
+  const uint16_t blinkIntervalMs = (uint16_t)(payload["blink_interval_ms"]  | 500);
+  const uint16_t breathePeriodMs = (uint16_t)(payload["breathe_period_ms"]  | 2000);
+  const uint16_t rainbowPeriodMs = (uint16_t)(payload["rainbow_period_ms"]  | 3000);
+
+  Serial.printf("[HWCmd] ears.set: mode=%s rgb=0x%06X brightness=%d request_id=%s\n",
+    modeStr, (unsigned)colorRGB, brightness, requestId);
+
+  _ear.setMode(mode, colorRGB, brightness, blinkIntervalMs, breathePeriodMs, rainbowPeriodMs);
+}
+
 }  // namespace App

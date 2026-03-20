@@ -37,6 +37,8 @@
 #include "../../runtime/audio/mic_reader.h"
 #include "../../runtime/audio/tts_player.h"
 #include "../../runtime/actuators/servo_controller.h"
+#include "../../runtime/lighting/base_led_controller.h"
+#include "../../runtime/lighting/ear_neopixel_controller.h"
 #include "../../protocol/envelope.h"
 #include "../../protocol/events.h"
 
@@ -104,7 +106,9 @@ class StackchanSession {
   Network::WsClient  _ws;
   Audio::MicReader   _mic;
   Audio::TTSPlayer   _ttsPlayer;
-  Actuator::ServoController _servo;  ///< P11-08: サーボ X/Y 制御サービス
+  Actuator::ServoController      _servo;  ///< P11-08: サーボ X/Y 制御サービス
+  Lighting::BaseLedController     _led;    ///< P11-03: M5GO Bottom3 RGB LED 制御サービス
+  Lighting::EarNeoPixelController _ear;    ///< P11-03: NECO MIMI NeoPixel 制御サービス
   Protocol::OutboundSequence _seq;
 
   SessionState  _state{SessionState::Idle};
@@ -241,6 +245,14 @@ class StackchanSession {
   void handleDeviceServoCalibrationGet(const String& payloadJson);
   /// device.servo.calibration.set: 校正値の更新・保存
   void handleDeviceServoCalibrationSet(const String& payloadJson);
+
+  // ── P11-03: LED / NeoPixel 制御イベントハンドラー ─────────────────────
+  // 各ハンドラーは session_hardware.cpp に実装します。
+
+  /// device.led.set: M5GO Bottom3 LED の点灯パターン制御
+  void handleDeviceLedSet(const String& payloadJson);
+  /// device.ears.set: NECO MIMI NeoPixel の点灯パターン制御（オプション）
+  void handleDeviceEarsSet(const String& payloadJson);
 
   /// device.servo.calibration.response を firmware → server へ送信します。
   void sendServoCalibrationResponse(const String& requestId);

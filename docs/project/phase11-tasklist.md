@@ -144,7 +144,7 @@ WebUI には少なくとも次の 4 パネルを追加する。
 | --- | --- | --- | --- | --- | --- |
 | P11-01 | firmware ハードウェア責務の棚卸しと境界定義 | docs 追記、責務一覧、既存 StackchanSession 依存マップ | 高 | いきなり実装分割すると責務漏れや循環参照が起きやすいため | 完了 |
 | P11-02 | ServoController サービスを追加 | firmware/runtime/actuators/servo_controller.*、インターフェース、初期化方針 | 高 | サーボ校正と安全制御が以後の診断導線の中核になるため | 完了 |
-| P11-03 | LED / Ear NeoPixel サービスを追加 | firmware/runtime/lighting/base_led_controller.*、ear_neopixel_controller.* | 高 | 視覚的フィードバックが早く、Hardware Test の価値をすぐ出せるため | 未着手 |
+| P11-03 | LED / Ear NeoPixel サービスを追加 | firmware/runtime/lighting/base_led_controller.*、ear_neopixel_controller.* | 高 | 視覚的フィードバックが早く、Hardware Test の価値をすぐ出せるため | 完了 |
 | P11-04 | Touch / Camera サービス境界を追加 | firmware/runtime/input/touch_service.*、vision/camera_service.* | 中 | タッチ反映と静止画取得の入口を session から分離するため | 未着手 |
 | P11-05 | device.servo 系 protocol を追加 | schema、examples、events.md、validation checklist 更新 | 高 | move と calibration を先に契約化しないと UI / server / firmware がずれるため | 完了 |
 | P11-06 | device.led.set と device.ears.set を追加 | schema、examples、server/firmware 受信テスト | 高 | LED 系は安全かつ即効性の高い最初の制御対象であるため | 完了 |

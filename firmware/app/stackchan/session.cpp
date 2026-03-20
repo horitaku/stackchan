@@ -33,6 +33,11 @@ void StackchanSession::begin() {
   // Preferences から校正値を自動復元し、起動時にホーム位置へ移動します。
   _servo.begin(FW_SERVO_X_PIN, FW_SERVO_Y_PIN);
 
+  // P11-03: M5GO Bottom3 LED と NECO MIMI NeoPixel を初期化します。
+  // FW_NECO_MIMI_ENABLED=0 の場合、_ear.begin() は何もしません（オプションHW）。
+  _led.begin(FW_LED_NUM);
+  _ear.begin(FW_NECO_MIMI_NUM_LEDS);
+
   // P8-07: M5Stack-Avatar の顔描画を開始します。
   _avatar.init();
   _avatar.setExpression(m5avatar::Expression::Neutral);
@@ -114,8 +119,10 @@ void StackchanSession::loop() {
   _ttsPlayer.update();
   // ── P11-08: サーボ補間処理 ──────────────────────────────────
   // soft_start が有効な場合、目標角度へ向けて況渡に角度を進めます。
-  _servo.update();
-  // ── Consumer: キューから消費・再生 ────────────────────────────────────
+  _servo.update();  // ── P11-03: LED アニメーション更新 ────────────────────────
+  // blink / breathe / rainbow のアニメーションを進めます。
+  _led.update();
+  _ear.update();  // ── Consumer: キューから消費・再生 ────────────────────────────────────
   // processTTSPlaybackQueue() はキュー監視・watermark チェック・dequeue を担当します
   // 受信フロー（producer）と分離されているため、互いに独立して進捗できます
   processTTSPlaybackQueue();

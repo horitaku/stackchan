@@ -48,6 +48,7 @@
 | 10 | 識別とメモリー運用基盤 | 複数デバイス識別、長期記憶キー設計、記憶ガバナンス、評価導線 | セッション外記憶が安全かつ再現可能に運用できる |
 | 11 | Firmware ハードウェア制御と診断導線 | デバイス抽象化、制御イベント、Hardware Test UI、状態レポート | WebUI から安全にハードウェア診断・校正・疎通確認を実施できる |
 | 12 | Firmware 内部リファクタリング | StackchanSession 分解、実装ファイル整理、内部境界の明確化 | session.cpp の肥大化を抑え、今後の hardware 拡張を安全に継続できる |
+| 13 | WebUI 内部リファクタリング | App.svelte 分割、UI コンポーネント境界整理、API/状態管理の責務分離 | 外部挙動を維持しながら WebUI の変更容易性と検証容易性を向上できる |
 
 ## 5. フェーズ詳細
 
@@ -162,6 +163,15 @@
 - 本フェーズは Phase 11 の大型拡張を安全に継続するための下準備として扱い、機能追加よりも変更容易性と検証容易性を優先します。
 - 実行タスクは docs/project/phase12-tasklist.md で管理します。
 
+### フェーズ 13. WebUI 内部リファクタリング
+
+- 外部仕様を維持したまま、肥大化した App.svelte の責務を整理します。
+- 最初の段階では表示責務をパネル単位コンポーネントへ分割し、App.svelte はページ組み立て中心に縮小します。
+- 次の段階で API 呼び出しを共通層へ集約し、エラーハンドリングとレスポンス整形の一貫性を高めます。
+- 状態管理は runtime/settings/tests/hardware のドメイン単位で整理し、回帰確認しやすい構造へ改善します。
+- 本フェーズは機能追加よりも、差分衝突の低減、レビュー性向上、後続機能追加の安全性確保を優先します。
+- 実行タスクは docs/project/phase13-tasklist.md で管理します。
+
 ## 6. PDCA 運用モデル
 
 短いイテレーションで進めます。1 つのイテレーションは、必ず 1 つの薄い縦スライスのみを対象とします。
@@ -273,6 +283,11 @@
 | P11-01 | firmware のハードウェア責務をサービスへ分離 | 高 | Copilot | P8-17 | servo / lighting / touch / camera の責務を StackchanSession から外し、委譲中心へ整理 | 未着手 |
 | P11-02 | device 制御イベントを protocol v0 に追加 | 高 | Copilot | P11-01 | device.led.set / device.ears.set / device.servo.move / device.state.report などを schema-first で定義 | 未着手 |
 | P11-03 | server に hardware test API を追加 | 高 | Copilot | P11-02 | WebUI から接続中セッションへ制御を中継する API 群を実装 | 未着手 |
+| P13-01 | App.svelte の責務マップと分割境界を定義 | 高 | Copilot | P12-11 | Overview/Settings/Tests/Hardware の境界、props/events 方針を固定 | 未着手 |
+| P13-02 | WebUI パネルをコンポーネントへ分割 | 高 | Copilot | P13-01 | App.svelte をページオーケストレーション中心へ縮小 | 未着手 |
+| P13-03 | API 呼び出し層を共通化 | 高 | Copilot | P13-02 | lib/api 配下に runtime/settings/tests/hardware API を整理 | 未着手 |
+| P13-04 | 状態管理のドメイン分離 | 中 | Copilot | P13-03 | runtime/settings/tests/hardware 単位で状態を追跡しやすく整理 | 未着手 |
+| P13-05 | WebUI 回帰確認手順と引き継ぎ docs を整備 | 高 | Copilot | P13-04 | 外部挙動維持の確認手順と既知制約を文書化 | 未着手 |
 | P11-04 | WebUI Hardware Test 画面を追加 | 高 | Copilot | P11-03 | Servo / LED / Audio / Camera の即時診断導線を実装 | 未着手 |
 | P11-05 | firmware 状態レポートと診断ログを強化 | 中 | Copilot | P11-03 | RSSI / heap / angle / calibration / mic level / speaker busy を可視化へ接続 | 未着手 |
 | P12-01 | StackchanSession の責務マップを作成 | 高 | Copilot | P8-17 | connection / protocol / avatar / tts stream / audio uplink の依存を棚卸しし、分割順を固定 | 未着手 |

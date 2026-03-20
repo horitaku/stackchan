@@ -65,6 +65,14 @@ constexpr const char* DEVICE_LED_SET  = "device.led.set";
 /// NECO MIMI（NeoPixel）を制御する（オプションハードウェア：未接続時は警告ログのみ）
 constexpr const char* DEVICE_EARS_SET = "device.ears.set";
 
+// ── Server → Firmware （診断系制御、P11-07） ───────────────────────────
+/// スピーカーテストトーン再生を指示する
+constexpr const char* DEVICE_AUDIO_TEST_PLAY = "device.audio.test.play";
+/// マイクテスト収音の開始を指示する
+constexpr const char* DEVICE_MIC_TEST_START  = "device.mic.test.start";
+/// カメラ静止画取得を指示する
+constexpr const char* DEVICE_CAMERA_CAPTURE  = "device.camera.capture";
+
 // ── Bidirectional （ハードウェア診断状態、P11-10） ─────────────────────
 /// ハードウェア診断状態を要求・通知する（server->firmware 要求 / firmware->server レポート）
 constexpr const char* DEVICE_STATE_REPORT = "device.state.report";

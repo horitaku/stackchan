@@ -17,6 +17,12 @@
 - motion.play.example.json
 - conversation.cancel.example.json
 
+- device.audio.test.play.example.json
+- device.mic.test.start.example.json
+- device.camera.capture.example.json
+- device.state.report.request.example.json
+- device.state.report.response.example.json
+
 注意:
 
 - 例の timestamp は RFC3339 UTC を使用しています。

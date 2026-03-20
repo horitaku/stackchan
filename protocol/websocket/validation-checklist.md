@@ -42,6 +42,18 @@
 - device.ears.set の breathe_period_ms が存在する場合 200〜10000 の整数である
 - device.ears.set の rainbow_period_ms が存在する場合 200〜30000 の整数である
 - NECO MIMI 未接続時、device.ears.set を受信した firmware は warning ログのみ出力しエラーを返さない
+- device.audio.test.play の request_id が存在する
+- device.audio.test.play の tone_hz が存在する場合 100〜3000 の整数である
+- device.audio.test.play の duration_ms が存在する場合 100〜5000 の整数である
+- device.audio.test.play の volume が存在する場合 0.0〜1.0 の数値である
+- device.mic.test.start の request_id が存在する
+- device.mic.test.start の sample_rate_hz が存在する場合 8000/16000/22050/24000/44100/48000 のいずれかである
+- device.mic.test.start の frame_duration_ms が存在する場合 10/20/40/60 のいずれかである
+- device.camera.capture の request_id が存在する
+- device.camera.capture の resolution が存在する場合 qqvga/qvga/vga のいずれかである
+- device.camera.capture の quality が存在する場合 1〜63 の整数である
+- device.state.report は request payload（request_id 必須）または response payload（uptime_ms/rssi/free_heap_bytes/current_angle_x_deg/current_angle_y_deg/calibration/mic_level/speaker_busy/camera_available 必須）のいずれかに一致する
+- device.state.report の response payload で calibration.x/y に required フィールド（center_offset_deg / min_deg / max_deg / invert / speed_limit_deg_per_sec / soft_start / home_deg）がすべて存在する
 
 ## Sequence and Ordering
 

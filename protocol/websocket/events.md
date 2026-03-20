@@ -26,6 +26,10 @@
 - device.servo.calibration.response （フェーズ 11/P11-05 追加）
 - device.led.set （フェーズ 11/P11-06 追加）
 - device.ears.set （フェーズ 11/P11-06 追加、NECO MIMI オプション）
+- device.audio.test.play （フェーズ 11/P11-07 追加）
+- device.mic.test.start （フェーズ 11/P11-07 追加）
+- device.camera.capture （フェーズ 11/P11-07 追加）
+- device.state.report （フェーズ 11/P11-07 追加）
 
 ## 2. Common Envelope
 
@@ -389,6 +393,70 @@
 - Optional hardware policy: firmware は `#ifdef FW_NECO_MIMI_ENABLED` ガードでコンパイル時に有効/無効を切り替える。実行時に未接続の場合は warning ログのみ出力し、エラーは送信しない
 - Event role: control command（即時反映、ack なし）
 
+## 5.18 device.audio.test.play（P11-07）
+
+- Direction: server -> firmware
+- Purpose: スピーカーテストトーンの再生を指示する
+- JSON Schema: `protocol/websocket/schemas/device.audio.test.play.schema.json`
+- Example: `protocol/examples/device.audio.test.play.example.json`
+- Payload fields:
+  - request_id: string (required) — 診断・ログ用相関 ID
+  - tone_hz: integer (optional, 100–3000) — テストトーン周波数（Hz）
+  - duration_ms: integer (optional, 100–5000) — 再生時間（ms）
+  - volume: number (optional, 0.0–1.0) — 再生音量
+- Event role: control command（即時反映、ack なし）
+
+## 5.19 device.mic.test.start（P11-07）
+
+- Direction: server -> firmware
+- Purpose: マイク入力テストを開始する
+- JSON Schema: `protocol/websocket/schemas/device.mic.test.start.schema.json`
+- Example: `protocol/examples/device.mic.test.start.example.json`
+- Payload fields:
+  - request_id: string (required) — 診断・ログ用相関 ID
+  - duration_ms: integer (optional, 100–10000) — テスト収音時間（ms）
+  - sample_rate_hz: integer (optional, enum: 8000, 16000, 22050, 24000, 44100, 48000) — 収音サンプルレート（Hz）
+  - frame_duration_ms: integer (optional, enum: 10, 20, 40, 60) — フレーム長（ms）
+- Event role: control command（即時反映、ack なし）
+
+## 5.20 device.camera.capture（P11-07）
+
+- Direction: server -> firmware
+- Purpose: カメラ静止画取得を指示する（初期フェーズは capture 要求のみ）
+- JSON Schema: `protocol/websocket/schemas/device.camera.capture.schema.json`
+- Example: `protocol/examples/device.camera.capture.example.json`
+- Payload fields:
+  - request_id: string (required) — 診断・ログ用相関 ID
+  - resolution: string (optional, enum: qqvga, qvga, vga) — 撮影解像度
+  - quality: integer (optional, 1–63) — JPEG quality（1=高品質, 63=低品質）
+- Event role: control command（即時反映、ack なし）
+
+## 5.21 device.state.report（P11-07）
+
+- Direction: bidirectional
+- Purpose: 診断状態の要求（server -> firmware）と状態レポート通知（firmware -> server）
+- JSON Schema: `protocol/websocket/schemas/device.state.report.schema.json`
+- Examples:
+  - request: `protocol/examples/device.state.report.request.example.json`
+  - response: `protocol/examples/device.state.report.response.example.json`
+- Request payload fields (server -> firmware):
+  - request_id: string (required) — 診断要求の相関 ID
+  - source: string (optional) — 要求元識別子（例: webui.hardware_test）
+- Response payload fields (firmware -> server):
+  - request_id: string (optional) — 要求由来の相関 ID
+  - source: string (optional) — レポート生成元識別子
+  - uptime_ms: integer (required, minimum: 0)
+  - rssi: integer (required, -120–0)
+  - free_heap_bytes: integer (required, minimum: 0)
+  - current_angle_x_deg: number (required, -90–90)
+  - current_angle_y_deg: number (required, -90–90)
+  - calibration: object (required) — x/y 軸の校正値
+  - mic_level: number (required, 0.0–1.0)
+  - speaker_busy: boolean (required)
+  - camera_available: boolean (required)
+  - firmware_version: string (optional)
+- Event role: telemetry + request/response
+
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 
 ### 6.1 バイナリ WebSocket フレームの構造
@@ -433,6 +501,13 @@ audio.stream_open 後に送信するバイナリ WebSocket フレームの構造
 - rollout 順序は protocol 定義（P11-06） -> firmware LedController / EarsController 実装（P11-03） -> server hardware test API（P11-11） -> WebUI（P11-12）とする。
 - 既存 firmware がこれらのイベントを受け取っても warning ログを残して無視してよい（v0 の後方互換ポリシーを継承）。
 
+### 7.4 フェーズ 11 互換性メモ（audio / mic / camera / state report 系）
+
+- `device.audio.test.play` / `device.mic.test.start` / `device.camera.capture` / `device.state.report` は新規イベント追加であり、既存イベントの required フィールドは変更しない。
+- `device.state.report` は同一 type を request（server -> firmware）と response（firmware -> server）で共用する。`payload` は oneOf で分岐し、既存 reader は unknown field tolerant を維持する。
+- camera 未実装 firmware と共存するため、`device.camera.capture` は未対応機で warning ログを残して無視してよい（v0 後方互換ポリシー）。
+- rollout 順序は protocol 定義（P11-07） -> firmware ハンドラー実装（P11-04/P11-10） -> server hardware test API（P11-11） -> WebUI（P11-12）とする。
+
 ## 8. Deferred Candidates
 
-interrupt 系 3 イベントはフェーズ 8 で正式化済み。`tts.buffer.watermark` は P8-19 で追加。次候補は別途 backlog で管理する。
+interrupt 系 3 イベントはフェーズ 8 で正式化済み。`tts.buffer.watermark` は P8-19 で追加。P11-07 の最小診断イベント追加も完了。次候補は別途 backlog で管理する。

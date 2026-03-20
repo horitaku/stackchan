@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "device.mic.test.start",
+  "description": "マイク入力テスト開始を指示するイベント（server -> firmware）。",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type":       { "const": "device.mic.test.start" },
+    "timestamp":  { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence":   { "type": "integer", "minimum": 1 },
+    "version":    { "const": "1.0" },
+    "payload":    { "$ref": "#/definitions/DeviceMicTestStartPayload" }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DeviceMicTestStartPayload": {
+      "type": "object",
+      "required": ["request_id"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "診断・ログ用の相関 ID"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000,
+          "description": "テスト収音時間（ms）。省略時は firmware デフォルト"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "enum": [8000, 16000, 22050, 24000, 44100, 48000],
+          "description": "収音サンプルレート（Hz）。省略時は firmware デフォルト"
+        },
+        "frame_duration_ms": {
+          "type": "integer",
+          "enum": [10, 20, 40, 60],
+          "description": "フレーム長（ms）。省略時は firmware デフォルト"
+        }
+      }
+    }
+  }
+}

@@ -67,3 +67,10 @@
 - `tts.chunk` v1.1 に optional `codec` フィールドを追加する（enum: `pcm`, `opus`）。
 - `codec` 未指定時は `pcm` として解釈し、既存 reader 実装との後方互換を維持する。
 - 互換分類: additive change（required 追加なし、既存 payload は有効）。
+
+## 9. Phase 11 Hardware Diagnostic Additions (P11-07)
+
+- `device.audio.test.play` / `device.mic.test.start` / `device.camera.capture` / `device.state.report` を新規追加する。
+- 互換分類: additive change（既存イベントの required フィールド変更なし）。
+- `device.state.report` は同一 type で request と response を共用するため、reader は payload の oneOf 判定で受理する。
+- rollout 順序は server reader 対応 -> firmware sender/handler 対応 -> strict validation 有効化とする。

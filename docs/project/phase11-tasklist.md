@@ -148,7 +148,7 @@ WebUI には少なくとも次の 4 パネルを追加する。
 | P11-04 | Touch / Camera サービス境界を追加 | firmware/runtime/input/touch_service.*、vision/camera_service.* | 中 | タッチ反映と静止画取得の入口を session から分離するため | 未着手 |
 | P11-05 | device.servo 系 protocol を追加 | schema、examples、events.md、validation checklist 更新 | 高 | move と calibration を先に契約化しないと UI / server / firmware がずれるため | 完了 |
 | P11-06 | device.led.set と device.ears.set を追加 | schema、examples、server/firmware 受信テスト | 高 | LED 系は安全かつ即効性の高い最初の制御対象であるため | 完了 |
-| P11-07 | audio / mic / camera / state report イベントを追加 | schema、examples、互換性メモ | 中 | 診断導線を広げる前に最小イベント集合を揃える必要があるため | 未着手 |
+| P11-07 | audio / mic / camera / state report イベントを追加 | schema、examples、互換性メモ | 中 | 診断導線を広げる前に最小イベント集合を揃える必要があるため | 完了 |
 | P11-08 | StackchanSession に hardware command router を追加 | 受信ディスパッチ整理、各サービスへの委譲、error handling | 高 | session の肥大化を抑えつつ、既存接続フローへ安全に統合するため | 完了 |
 | P11-09 | サーボ校正ストアを実装 | calibration モデル、不揮発保存、read/write API | 高 | 個体差調整を後回しにすると以後の servo UI が危険になるため | 完了 |
 | P11-10 | device.state.report を firmware から送信 | RSSI / free heap / current angle / calibration / mic level / speaker busy / camera available / firmware version | 高 | WebUI の診断精度と運用時の切り分けを大きく改善するため | 完了 |

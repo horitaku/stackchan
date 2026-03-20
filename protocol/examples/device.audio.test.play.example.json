@@ -1,0 +1,13 @@
+{
+  "type": "device.audio.test.play",
+  "timestamp": "2026-03-20T10:05:00Z",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sequence": 31,
+  "version": "1.0",
+  "payload": {
+    "request_id": "hw-audio-001",
+    "tone_hz": 440,
+    "duration_ms": 800,
+    "volume": 0.8
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "device.camera.capture",
+  "description": "カメラ静止画取得を指示するイベント（server -> firmware）。",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type":       { "const": "device.camera.capture" },
+    "timestamp":  { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence":   { "type": "integer", "minimum": 1 },
+    "version":    { "const": "1.0" },
+    "payload":    { "$ref": "#/definitions/DeviceCameraCapturePayload" }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DeviceCameraCapturePayload": {
+      "type": "object",
+      "required": ["request_id"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "診断・ログ用の相関 ID"
+        },
+        "resolution": {
+          "type": "string",
+          "enum": ["qqvga", "qvga", "vga"],
+          "description": "撮影解像度。省略時は firmware デフォルト"
+        },
+        "quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 63,
+          "description": "JPEG quality（1=高品質〜63=低品質）。省略時は firmware デフォルト"
+        }
+      }
+    }
+  }
+}

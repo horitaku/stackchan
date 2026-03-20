@@ -1,0 +1,14 @@
+{
+  "type": "device.servo.move",
+  "timestamp": "2026-03-20T10:00:00Z",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sequence": 10,
+  "version": "1.0",
+  "payload": {
+    "request_id": "diag-servo-001",
+    "axis": "both",
+    "angle_x_deg": 15.0,
+    "angle_y_deg": -10.0,
+    "speed": 1.0
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "device.servo.calibration.response",
+  "description": "サーボ校正値の応答イベント（firmware -> server）。device.servo.calibration.get の request_id を mirror して返す。",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type":       { "const": "device.servo.calibration.response" },
+    "timestamp":  { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence":   { "type": "integer", "minimum": 1 },
+    "version":    { "const": "1.0" },
+    "payload":    { "$ref": "#/definitions/DeviceServoCalibrationResponsePayload" }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ServoAxisCalibration": {
+      "type": "object",
+      "required": [
+        "center_offset_deg",
+        "min_deg",
+        "max_deg",
+        "invert",
+        "speed_limit_deg_per_sec",
+        "soft_start",
+        "home_deg"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "center_offset_deg": {
+          "type": "number",
+          "minimum": -45,
+          "maximum": 45,
+          "description": "機体中央のズレ補正値（度）"
+        },
+        "min_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 0,
+          "description": "論理角度の最小値（度）"
+        },
+        "max_deg": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 90,
+          "description": "論理角度の最大値（度）"
+        },
+        "invert": {
+          "type": "boolean",
+          "description": "サーボ回転方向の反転フラグ"
+        },
+        "speed_limit_deg_per_sec": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 360,
+          "description": "角速度の上限（度/秒）"
+        },
+        "soft_start": {
+          "type": "boolean",
+          "description": "ソフトスタート（スムーズな加減速）有効フラグ"
+        },
+        "home_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "ホーム位置（論理角度・度）"
+        }
+      }
+    },
+    "DeviceServoCalibrationResponsePayload": {
+      "type": "object",
+      "required": ["request_id", "x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "device.servo.calibration.get の request_id をそのまま返す"
+        },
+        "x": {
+          "$ref": "#/definitions/ServoAxisCalibration",
+          "description": "X 軸（水平・左右）の校正値"
+        },
+        "y": {
+          "$ref": "#/definitions/ServoAxisCalibration",
+          "description": "Y 軸（垂直・上下）の校正値"
+        },
+        "current_angle_x_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "現在の X 軸論理角度（度、任意）。診断用"
+        },
+        "current_angle_y_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "現在の Y 軸論理角度（度、任意）。診断用"
+        }
+      }
+    }
+  }
+}

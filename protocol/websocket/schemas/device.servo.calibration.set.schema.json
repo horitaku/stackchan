@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "device.servo.calibration.set",
+  "description": "サーボ校正値の更新・不揮発保存指示イベント（server -> firmware）。変更されたフィールドだけ送ればよい（差分更新）。保存失敗時は error イベントで通知される。",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type":       { "const": "device.servo.calibration.set" },
+    "timestamp":  { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence":   { "type": "integer", "minimum": 1 },
+    "version":    { "const": "1.0" },
+    "payload":    { "$ref": "#/definitions/DeviceServoCalibrationSetPayload" }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DeviceServoCalibrationSetPayload": {
+      "type": "object",
+      "required": ["request_id", "axis"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "診断・ログ用の相関 ID"
+        },
+        "axis": {
+          "type": "string",
+          "enum": ["x", "y"],
+          "description": "更新対象の軸。x=水平（左右）、y=垂直（上下）"
+        },
+        "center_offset_deg": {
+          "type": "number",
+          "minimum": -45,
+          "maximum": 45,
+          "description": "機体中央のズレ補正値（度）。正値=実サーボ中央が右/上にある場合に加算"
+        },
+        "min_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 0,
+          "description": "論理角度の最小値（度）。WebUI から送られる angle_x/y_deg はこの値でクランプされる"
+        },
+        "max_deg": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 90,
+          "description": "論理角度の最大値（度）。WebUI から送られる angle_x/y_deg はこの値でクランプされる"
+        },
+        "invert": {
+          "type": "boolean",
+          "description": "サーボの回転方向を反転するフラグ。機体取り付け方向に応じて設定する"
+        },
+        "speed_limit_deg_per_sec": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 360,
+          "description": "角速度の上限（度/秒）。device.servo.move の speed 倍率はこの値を超えない"
+        },
+        "soft_start": {
+          "type": "boolean",
+          "description": "スムーズな加減速（ソフトスタート）を有効にするフラグ"
+        },
+        "home_deg": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "この軸のホーム位置（論理角度・度）。「home へ戻す」操作で使われる"
+        }
+      }
+    }
+  }
+}

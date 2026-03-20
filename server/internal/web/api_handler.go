@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/horitaku/stackchan/server/internal/conversation"
+	"github.com/horitaku/stackchan/server/internal/logging"
 	"github.com/horitaku/stackchan/server/internal/providers"
 )
 
@@ -74,6 +75,91 @@ type LLMStackchanTestRequest struct {
 	Expression      string `json:"expression,omitempty"`
 	Codec           string `json:"codec,omitempty"`
 	ChunkVersion    string `json:"chunk_version,omitempty"`
+}
+
+const defaultHardwareDispatchTimeoutMs = 1500
+
+const (
+	hwEventServoMove           = "device.servo.move"
+	hwEventServoCalibrationGet = "device.servo.calibration.get"
+	hwEventServoCalibrationSet = "device.servo.calibration.set"
+	hwEventLedSet              = "device.led.set"
+	hwEventEarsSet             = "device.ears.set"
+	hwEventAudioTestPlay       = "device.audio.test.play"
+	hwEventMicTestStart        = "device.mic.test.start"
+	hwEventCameraCapture       = "device.camera.capture"
+	hwEventStateReport         = "device.state.report"
+)
+
+// HardwareServoTestRequest は /api/tests/hardware/servo の入力です。
+// command:
+//   - move (default)
+//   - calibration_get
+//   - calibration_set
+type HardwareServoTestRequest struct {
+	RequestID           string   `json:"request_id,omitempty"`
+	Command             string   `json:"command,omitempty"`
+	Axis                string   `json:"axis,omitempty"`
+	AngleXDeg           *float64 `json:"angle_x_deg,omitempty"`
+	AngleYDeg           *float64 `json:"angle_y_deg,omitempty"`
+	Speed               *float64 `json:"speed,omitempty"`
+	CenterOffsetDeg     *float64 `json:"center_offset_deg,omitempty"`
+	MinDeg              *float64 `json:"min_deg,omitempty"`
+	MaxDeg              *float64 `json:"max_deg,omitempty"`
+	Invert              *bool    `json:"invert,omitempty"`
+	SpeedLimitDegPerSec *float64 `json:"speed_limit_deg_per_sec,omitempty"`
+	SoftStart           *bool    `json:"soft_start,omitempty"`
+	HomeDeg             *float64 `json:"home_deg,omitempty"`
+	TimeoutMs           int      `json:"timeout_ms,omitempty"`
+}
+
+// HardwareLedTestRequest は /api/tests/hardware/led の入力です。
+type HardwareLedTestRequest struct {
+	RequestID       string `json:"request_id,omitempty"`
+	Mode            string `json:"mode"`
+	Color           string `json:"color,omitempty"`
+	Brightness      *int   `json:"brightness,omitempty"`
+	BlinkIntervalMs *int   `json:"blink_interval_ms,omitempty"`
+	BreathePeriodMs *int   `json:"breathe_period_ms,omitempty"`
+	TimeoutMs       int    `json:"timeout_ms,omitempty"`
+}
+
+// HardwareEarsTestRequest は /api/tests/hardware/ears の入力です。
+type HardwareEarsTestRequest struct {
+	RequestID       string `json:"request_id,omitempty"`
+	Mode            string `json:"mode"`
+	Color           string `json:"color,omitempty"`
+	Brightness      *int   `json:"brightness,omitempty"`
+	BlinkIntervalMs *int   `json:"blink_interval_ms,omitempty"`
+	BreathePeriodMs *int   `json:"breathe_period_ms,omitempty"`
+	RainbowPeriodMs *int   `json:"rainbow_period_ms,omitempty"`
+	TimeoutMs       int    `json:"timeout_ms,omitempty"`
+}
+
+// HardwareAudioPlayTestRequest は /api/tests/hardware/audio/play の入力です。
+type HardwareAudioPlayTestRequest struct {
+	RequestID  string   `json:"request_id,omitempty"`
+	ToneHz     *int     `json:"tone_hz,omitempty"`
+	DurationMs *int     `json:"duration_ms,omitempty"`
+	Volume     *float64 `json:"volume,omitempty"`
+	TimeoutMs  int      `json:"timeout_ms,omitempty"`
+}
+
+// HardwareMicStartTestRequest は /api/tests/hardware/mic/start の入力です。
+type HardwareMicStartTestRequest struct {
+	RequestID       string `json:"request_id,omitempty"`
+	DurationMs      *int   `json:"duration_ms,omitempty"`
+	SampleRateHz    *int   `json:"sample_rate_hz,omitempty"`
+	FrameDurationMs *int   `json:"frame_duration_ms,omitempty"`
+	TimeoutMs       int    `json:"timeout_ms,omitempty"`
+}
+
+// HardwareCameraCaptureTestRequest は /api/tests/hardware/camera/capture の入力です。
+type HardwareCameraCaptureTestRequest struct {
+	RequestID  string `json:"request_id,omitempty"`
+	Resolution string `json:"resolution,omitempty"`
+	Quality    *int   `json:"quality,omitempty"`
+	TimeoutMs  int    `json:"timeout_ms,omitempty"`
 }
 
 type voicevoxSynthesisResult struct {
@@ -148,6 +234,376 @@ func (h *APIHandler) RegisterRoutes(r gin.IRouter) {
 	r.POST("/tests/llm/stackchan", h.RunLLMStackchanTest)
 	r.POST("/tests/voicevox/ui", h.RunVoicevoxUITest)
 	r.POST("/tests/voicevox/stackchan", h.RunVoicevoxStackchanTest)
+	r.POST("/tests/hardware/servo", h.RunHardwareServoTest)
+	r.POST("/tests/hardware/led", h.RunHardwareLedTest)
+	r.POST("/tests/hardware/ears", h.RunHardwareEarsTest)
+	r.POST("/tests/hardware/audio/play", h.RunHardwareAudioPlayTest)
+	r.POST("/tests/hardware/mic/start", h.RunHardwareMicStartTest)
+	r.POST("/tests/hardware/camera/capture", h.RunHardwareCameraCaptureTest)
+	r.GET("/tests/hardware/state", h.GetHardwareState)
+}
+
+func (h *APIHandler) ensureHardwareWS(c *gin.Context) bool {
+	if h.wsHandler == nil {
+		h.writeHardwareError(c, http.StatusServiceUnavailable, "ws_unavailable", "ws handler is not configured", true)
+		return false
+	}
+	return true
+}
+
+func (h *APIHandler) writeHardwareError(c *gin.Context, status int, code, message string, retryable bool) {
+	c.JSON(status, gin.H{
+		"error": gin.H{
+			"code":      code,
+			"message":   message,
+			"retryable": retryable,
+		},
+	})
+}
+
+func (h *APIHandler) sendHardwareEventWithTimeout(ctx context.Context, eventType string, payload map[string]any, timeoutMs int) (string, error) {
+	if timeoutMs <= 0 {
+		timeoutMs = defaultHardwareDispatchTimeoutMs
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+
+	type sendResult struct {
+		sessionID string
+		err       error
+	}
+	resCh := make(chan sendResult, 1)
+	go func() {
+		sid, err := h.wsHandler.SendControlEventToActive(eventType, payload)
+		resCh <- sendResult{sessionID: sid, err: err}
+	}()
+
+	select {
+	case <-timeoutCtx.Done():
+		return "", fmt.Errorf("hardware dispatch timeout")
+	case res := <-resCh:
+		return res.sessionID, res.err
+	}
+}
+
+func (h *APIHandler) respondHardwareDispatch(c *gin.Context, eventType, requestID, command string, timeoutMs int, payload map[string]any) {
+	sessionID, err := h.sendHardwareEventWithTimeout(c.Request.Context(), eventType, payload, timeoutMs)
+	if err != nil {
+		errMessage := err.Error()
+		errorCode := "dispatch_failed"
+		statusCode := http.StatusBadGateway
+		switch {
+		case strings.Contains(errMessage, "timeout"):
+			errorCode = "dispatch_timeout"
+			statusCode = http.StatusGatewayTimeout
+		case strings.Contains(errMessage, "no active Stackchan session"):
+			errorCode = "stackchan_not_connected"
+			statusCode = http.StatusConflict
+		}
+		h.writeHardwareError(c, statusCode, errorCode, errMessage, true)
+
+		logging.Logger.Warn().
+			Str("component", "hardware_dispatch").
+			Str("event_type", eventType).
+			Str("request_id", requestID).
+			Str("command", command).
+			Int("dispatch_timeout_ms", timeoutMs).
+			Str("error_code", errorCode).
+			Str("error_message", errMessage).
+			Msg("hardware control dispatch failed")
+		return
+	}
+
+	resp := gin.H{
+		"status":              "sent",
+		"event_type":          eventType,
+		"request_id":          requestID,
+		"target_session_id":   sessionID,
+		"dispatch_timeout_ms": timeoutMs,
+		"sent_at":             time.Now().UTC().Format(time.RFC3339),
+	}
+	if strings.TrimSpace(command) != "" {
+		resp["command"] = command
+	}
+
+	logging.Logger.Info().
+		Str("component", "hardware_dispatch").
+		Str("event_type", eventType).
+		Str("request_id", requestID).
+		Str("command", command).
+		Str("session_id", sessionID).
+		Int("dispatch_timeout_ms", timeoutMs).
+		Msg("hardware control dispatched")
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// RunHardwareServoTest はサーボ系の診断コマンドを active session へ送信します。
+func (h *APIHandler) RunHardwareServoTest(c *gin.Context) {
+	if !h.ensureHardwareWS(c) {
+		return
+	}
+
+	var req HardwareServoTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "invalid request body", false)
+		return
+	}
+
+	reqID := strings.TrimSpace(req.RequestID)
+	if reqID == "" {
+		reqID = "hw-servo-" + uuid.NewString()
+	}
+	command := strings.TrimSpace(req.Command)
+	if command == "" {
+		command = "move"
+	}
+
+	payload := map[string]any{"request_id": reqID}
+	eventType := ""
+
+	switch command {
+	case "move":
+		eventType = hwEventServoMove
+		axis := strings.TrimSpace(req.Axis)
+		if axis == "" {
+			h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "axis is required for servo move", false)
+			return
+		}
+		payload["axis"] = axis
+		if req.AngleXDeg != nil {
+			payload["angle_x_deg"] = *req.AngleXDeg
+		}
+		if req.AngleYDeg != nil {
+			payload["angle_y_deg"] = *req.AngleYDeg
+		}
+		if req.Speed != nil {
+			payload["speed"] = *req.Speed
+		}
+	case "calibration_get":
+		eventType = hwEventServoCalibrationGet
+	case "calibration_set":
+		eventType = hwEventServoCalibrationSet
+		axis := strings.TrimSpace(req.Axis)
+		if axis != "x" && axis != "y" {
+			h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "axis must be x or y for calibration_set", false)
+			return
+		}
+		payload["axis"] = axis
+		if req.CenterOffsetDeg != nil {
+			payload["center_offset_deg"] = *req.CenterOffsetDeg
+		}
+		if req.MinDeg != nil {
+			payload["min_deg"] = *req.MinDeg
+		}
+		if req.MaxDeg != nil {
+			payload["max_deg"] = *req.MaxDeg
+		}
+		if req.Invert != nil {
+			payload["invert"] = *req.Invert
+		}
+		if req.SpeedLimitDegPerSec != nil {
+			payload["speed_limit_deg_per_sec"] = *req.SpeedLimitDegPerSec
+		}
+		if req.SoftStart != nil {
+			payload["soft_start"] = *req.SoftStart
+		}
+		if req.HomeDeg != nil {
+			payload["home_deg"] = *req.HomeDeg
+		}
+	default:
+		h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "command must be one of: move, calibration_get, calibration_set", false)
+		return
+	}
+
+	h.respondHardwareDispatch(c, eventType, reqID, command, req.TimeoutMs, payload)
+}
+
+// RunHardwareLedTest は LED 診断イベントを active session へ送信します。
+func (h *APIHandler) RunHardwareLedTest(c *gin.Context) {
+	if !h.ensureHardwareWS(c) {
+		return
+	}
+
+	var req HardwareLedTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "invalid request body", false)
+		return
+	}
+
+	reqID := strings.TrimSpace(req.RequestID)
+	if reqID == "" {
+		reqID = "hw-led-" + uuid.NewString()
+	}
+	payload := map[string]any{
+		"request_id": reqID,
+		"mode":       strings.TrimSpace(req.Mode),
+	}
+	if req.Color != "" {
+		payload["color"] = strings.TrimSpace(req.Color)
+	}
+	if req.Brightness != nil {
+		payload["brightness"] = *req.Brightness
+	}
+	if req.BlinkIntervalMs != nil {
+		payload["blink_interval_ms"] = *req.BlinkIntervalMs
+	}
+	if req.BreathePeriodMs != nil {
+		payload["breathe_period_ms"] = *req.BreathePeriodMs
+	}
+
+	h.respondHardwareDispatch(c, hwEventLedSet, reqID, "set", req.TimeoutMs, payload)
+}
+
+// RunHardwareEarsTest は耳 NeoPixel 診断イベントを active session へ送信します。
+func (h *APIHandler) RunHardwareEarsTest(c *gin.Context) {
+	if !h.ensureHardwareWS(c) {
+		return
+	}
+
+	var req HardwareEarsTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "invalid request body", false)
+		return
+	}
+
+	reqID := strings.TrimSpace(req.RequestID)
+	if reqID == "" {
+		reqID = "hw-ears-" + uuid.NewString()
+	}
+	payload := map[string]any{
+		"request_id": reqID,
+		"mode":       strings.TrimSpace(req.Mode),
+	}
+	if req.Color != "" {
+		payload["color"] = strings.TrimSpace(req.Color)
+	}
+	if req.Brightness != nil {
+		payload["brightness"] = *req.Brightness
+	}
+	if req.BlinkIntervalMs != nil {
+		payload["blink_interval_ms"] = *req.BlinkIntervalMs
+	}
+	if req.BreathePeriodMs != nil {
+		payload["breathe_period_ms"] = *req.BreathePeriodMs
+	}
+	if req.RainbowPeriodMs != nil {
+		payload["rainbow_period_ms"] = *req.RainbowPeriodMs
+	}
+
+	h.respondHardwareDispatch(c, hwEventEarsSet, reqID, "set", req.TimeoutMs, payload)
+}
+
+// RunHardwareAudioPlayTest はスピーカーテスト再生イベントを active session へ送信します。
+func (h *APIHandler) RunHardwareAudioPlayTest(c *gin.Context) {
+	if !h.ensureHardwareWS(c) {
+		return
+	}
+
+	var req HardwareAudioPlayTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "invalid request body", false)
+		return
+	}
+
+	reqID := strings.TrimSpace(req.RequestID)
+	if reqID == "" {
+		reqID = "hw-audio-" + uuid.NewString()
+	}
+	payload := map[string]any{"request_id": reqID}
+	if req.ToneHz != nil {
+		payload["tone_hz"] = *req.ToneHz
+	}
+	if req.DurationMs != nil {
+		payload["duration_ms"] = *req.DurationMs
+	}
+	if req.Volume != nil {
+		payload["volume"] = *req.Volume
+	}
+
+	h.respondHardwareDispatch(c, hwEventAudioTestPlay, reqID, "play", req.TimeoutMs, payload)
+}
+
+// RunHardwareMicStartTest はマイクテスト開始イベントを active session へ送信します。
+func (h *APIHandler) RunHardwareMicStartTest(c *gin.Context) {
+	if !h.ensureHardwareWS(c) {
+		return
+	}
+
+	var req HardwareMicStartTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "invalid request body", false)
+		return
+	}
+
+	reqID := strings.TrimSpace(req.RequestID)
+	if reqID == "" {
+		reqID = "hw-mic-" + uuid.NewString()
+	}
+	payload := map[string]any{"request_id": reqID}
+	if req.DurationMs != nil {
+		payload["duration_ms"] = *req.DurationMs
+	}
+	if req.SampleRateHz != nil {
+		payload["sample_rate_hz"] = *req.SampleRateHz
+	}
+	if req.FrameDurationMs != nil {
+		payload["frame_duration_ms"] = *req.FrameDurationMs
+	}
+
+	h.respondHardwareDispatch(c, hwEventMicTestStart, reqID, "start", req.TimeoutMs, payload)
+}
+
+// RunHardwareCameraCaptureTest はカメラ静止画取得イベントを active session へ送信します。
+func (h *APIHandler) RunHardwareCameraCaptureTest(c *gin.Context) {
+	if !h.ensureHardwareWS(c) {
+		return
+	}
+
+	var req HardwareCameraCaptureTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.writeHardwareError(c, http.StatusBadRequest, "invalid_request", "invalid request body", false)
+		return
+	}
+
+	reqID := strings.TrimSpace(req.RequestID)
+	if reqID == "" {
+		reqID = "hw-camera-" + uuid.NewString()
+	}
+	payload := map[string]any{"request_id": reqID}
+	if strings.TrimSpace(req.Resolution) != "" {
+		payload["resolution"] = strings.TrimSpace(req.Resolution)
+	}
+	if req.Quality != nil {
+		payload["quality"] = *req.Quality
+	}
+
+	h.respondHardwareDispatch(c, hwEventCameraCapture, reqID, "capture", req.TimeoutMs, payload)
+}
+
+// GetHardwareState は診断向け state.report 要求を active session へ送信します。
+func (h *APIHandler) GetHardwareState(c *gin.Context) {
+	if !h.ensureHardwareWS(c) {
+		return
+	}
+
+	reqID := strings.TrimSpace(c.Query("request_id"))
+	if reqID == "" {
+		reqID = "hw-state-" + uuid.NewString()
+	}
+	timeoutMs := 0
+	if raw := strings.TrimSpace(c.Query("timeout_ms")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			timeoutMs = parsed
+		}
+	}
+	payload := map[string]any{
+		"request_id": reqID,
+		"source":     "webui.hardware_test",
+	}
+
+	h.respondHardwareDispatch(c, hwEventStateReport, reqID, "report", timeoutMs, payload)
 }
 
 // GetRuntimeOverview は可観測性スナップショットを返します。

@@ -20,6 +20,12 @@
 - tts.stop （フェーズ 8 追加）
 - audio.stream_abort （フェーズ 8 追加）
 - tts.buffer.watermark （フェーズ 8/P8-19 追加）
+- device.servo.move （フェーズ 11/P11-05 追加）
+- device.servo.calibration.get （フェーズ 11/P11-05 追加）
+- device.servo.calibration.set （フェーズ 11/P11-05 追加）
+- device.servo.calibration.response （フェーズ 11/P11-05 追加）
+- device.led.set （フェーズ 11/P11-06 追加）
+- device.ears.set （フェーズ 11/P11-06 追加、NECO MIMI オプション）
 
 ## 2. Common Envelope
 
@@ -124,6 +130,21 @@
 - conversation.cancel 受信時に active conversation が存在しない場合: `invalid_payload`（message: "no active conversation to cancel"）
 - tts.stop 対象の再生が存在しない場合: `invalid_payload`（message: "no active tts playback to stop"）
 - audio.stream_abort の stream_id が未登録の場合: `invalid_payload`（message: "audio stream not found"）
+
+### 4.3 device.servo 系 error codes (フェーズ 11)
+
+- device.servo.move で axis=x なのに angle_x_deg が存在しない場合: `invalid_payload`（message: "angle_x_deg required when axis=x"）
+- device.servo.move で axis=y なのに angle_y_deg が存在しない場合: `invalid_payload`（message: "angle_y_deg required when axis=y"）
+- device.servo.move で axis=both なのに angle_x_deg/angle_y_deg の一方が存在しない場合: `invalid_payload`（message: "both angle_x_deg and angle_y_deg required when axis=both"）
+- device.servo.calibration.set で min_deg >= max_deg の場合: `invalid_payload`（message: "min_deg must be less than max_deg"）
+- calibration の不揮発保存に失敗した場合: `device_error`（message: "servo calibration save failed", retryable: true）
+- 未接続のセッションへ servo コマンドが届いた場合: `session_not_found`（message: "no active stackchan session found"）
+
+### 4.4 device.led / device.ears 系 error codes（フェーズ 11）
+
+- device.led.set で mode=solid/blink/breathe なのに color が省略されている場合: `invalid_payload`（message: "color required for mode solid/blink/breathe"）
+- device.ears.set で mode=solid/blink/breathe なのに color が省略されている場合: `invalid_payload`（message: "color required for mode solid/blink/breathe"）
+- NECO MIMI が未接続の場合（device.ears.set): firmware は warning ログを出力し、エラーは返さない（silent ignore ポリシー）
 
 ## 5. フェーズ 4 追加イベント
 
@@ -269,6 +290,105 @@
 - 送信タイミング: watermark 状態が変化した時点のみ（low_water 持続中の連続送信は禁止）
 - 送信レート制限: 同一状態での再送は500ms 以上間隔を空ける
 
+## 5.12 device.servo.move（P11-05）
+
+- Direction: server -> firmware
+- Purpose: X/Y 軸のサーボを指定した論理角度へ移動する。firmware が校正値（center_offset_deg / min_deg / max_deg / invert / speed_limit_deg_per_sec）を適用して実角度へ変換する
+- JSON Schema: `protocol/websocket/schemas/device.servo.move.schema.json`
+- Example: `protocol/examples/device.servo.move.example.json`
+- Payload fields:
+  - request_id: string (optional) — 診断・ログ用相関 ID
+  - axis: string (required, enum: x, y, both) — 移動軸。x=水平（左右）、y=垂直（上下）、both=両軸同時
+  - angle_x_deg: number (optional, -90–90) — X 軸目標論理角度（度）。axis=x または both の場合は必須
+  - angle_y_deg: number (optional, -90–90) — Y 軸目標論理角度（度）。axis=y または both の場合は必須
+  - speed: number (optional, 0.1–3.0) — 速度倍率。校正値の speed_limit_deg_per_sec が絶対上限
+- Safety rule: firmware は angle を [min_deg, max_deg] でクランプしてから校正値を適用する。クランプが発生した場合は warning ログを出力する
+- Event role: control command（即時反映、ack なし。エラー時のみ error イベント）
+
+## 5.13 device.servo.calibration.get（P11-05）
+
+- Direction: server -> firmware
+- Purpose: firmware が保持している現在のサーボ校正値を request/response パターンで取得する
+- JSON Schema: `protocol/websocket/schemas/device.servo.calibration.get.schema.json`
+- Example: `protocol/examples/device.servo.calibration.get.example.json`
+- Payload fields:
+  - request_id: string (required) — device.servo.calibration.response で mirror して返す相関 ID
+- Response: `device.servo.calibration.response`（同一 session_id で firmware から送信）
+- Event role: request/response。firmware は受信後なるべく速やかに response を返す
+
+## 5.14 device.servo.calibration.set（P11-05）
+
+- Direction: server -> firmware
+- Purpose: 校正値を差分更新し、不揮発ストレージ（Preferences / SPIFFS 等）へ保存する
+- JSON Schema: `protocol/websocket/schemas/device.servo.calibration.set.schema.json`
+- Example: `protocol/examples/device.servo.calibration.set.example.json`
+- Payload fields:
+  - request_id: string (required) — 診断・ログ用相関 ID
+  - axis: string (required, enum: x, y) — 更新対象の軸
+  - center_offset_deg: number (optional, -45–45) — 機体中央のズレ補正値（度）
+  - min_deg: number (optional, -90–0) — 論理角度の最小値（度）
+  - max_deg: number (optional, 0–90) — 論理角度の最大値（度）
+  - invert: boolean (optional) — サーボ回転方向の反転フラグ
+  - speed_limit_deg_per_sec: number (optional, 1–360) — 角速度の上限（度/秒）
+  - soft_start: boolean (optional) — スムーズな加減速（ソフトスタート）フラグ
+  - home_deg: number (optional, -90–90) — この軸のホーム位置（論理角度）
+- Constraint: min_deg < max_deg を firmware 側でも検証し、違反時は error イベントを返す
+- Semantics: 差分更新。省略フィールドは現在値を保持する。保存後に設定を即時反映する
+- Event role: control command（保存成功は ack なし、保存失敗時は error イベント）
+
+## 5.15 device.servo.calibration.response（P11-05）
+
+- Direction: firmware -> server
+- Purpose: device.servo.calibration.get への応答。現在の校正値と現在角度を返す
+- JSON Schema: `protocol/websocket/schemas/device.servo.calibration.response.schema.json`
+- Example: `protocol/examples/device.servo.calibration.response.example.json`
+- Payload fields:
+  - request_id: string (required) — device.servo.calibration.get の request_id をそのまま返す
+  - x: object (required) — X 軸の校正値（ServoAxisCalibration）
+  - y: object (required) — Y 軸の校正値（ServoAxisCalibration）
+  - current_angle_x_deg: number (optional, -90–90) — 現在の X 軸論理角度（診断用）
+  - current_angle_y_deg: number (optional, -90–90) — 現在の Y 軸論理角度（診断用）
+- ServoAxisCalibration 共通フィールド（x/y 共通）:
+  - center_offset_deg: number (required, -45–45)
+  - min_deg: number (required, -90–0)
+  - max_deg: number (required, 0–90)
+  - invert: boolean (required)
+  - speed_limit_deg_per_sec: number (required, 1–360)
+  - soft_start: boolean (required)
+  - home_deg: number (required, -90–90)
+
+## 5.16 device.led.set（P11-06）
+
+- Direction: server -> firmware
+- Purpose: M5GO Bottom3 の RGB LED の点灯パターンと色を制御する
+- JSON Schema: `protocol/websocket/schemas/device.led.set.schema.json`
+- Example: `protocol/examples/device.led.set.example.json`
+- Payload fields:
+  - request_id: string (optional) — 診断・ログ用相関 ID
+  - mode: string (required, enum: off, solid, blink, breathe) — 点灯パターン
+  - color: string (optional, pattern: #RRGGBB) — RGB カラーコード。mode=solid/blink/breathe の場合は必須
+  - brightness: integer (optional, 0–255) — 輝度。省略時は firmware のデフォルト値
+  - blink_interval_ms: integer (optional, 50–5000) — blink モード時の点滅間隔（ms）
+  - breathe_period_ms: integer (optional, 200–10000) — breathe モード時の明暗 1 周期（ms）
+- Event role: control command（即時反映、ack なし。バリデーションエラー時のみ error イベント）
+
+## 5.17 device.ears.set（P11-06）
+
+- Direction: server -> firmware
+- Purpose: NECO MIMI（NeoPixel）の点灯パターンと色を制御する。NECO MIMI はオプションハードウェアのため、未接続時は firmware が warning ログを出力し、エラーは返さない
+- JSON Schema: `protocol/websocket/schemas/device.ears.set.schema.json`
+- Example: `protocol/examples/device.ears.set.example.json`
+- Payload fields:
+  - request_id: string (optional) — 診断・ログ用相関 ID
+  - mode: string (required, enum: off, solid, blink, breathe, rainbow) — 点灯パターン。rainbow=レインボーサイクル
+  - color: string (optional, pattern: #RRGGBB) — RGB カラーコード。mode=solid/blink/breathe の場合は必須
+  - brightness: integer (optional, 0–255) — 輝度。省略時は firmware のデフォルト値
+  - blink_interval_ms: integer (optional, 50–5000) — blink モード時の点滅間隔（ms）
+  - breathe_period_ms: integer (optional, 200–10000) — breathe モード時の明暗 1 周期（ms）
+  - rainbow_period_ms: integer (optional, 200–30000) — rainbow モード時の色相 1 周期（ms）
+- Optional hardware policy: firmware は `#ifdef FW_NECO_MIMI_ENABLED` ガードでコンパイル時に有効/無効を切り替える。実行時に未接続の場合は warning ログのみ出力し、エラーは送信しない
+- Event role: control command（即時反映、ack なし）
+
 ## 6. バイナリフレームフォーマット（フェーズ 4）
 
 ### 6.1 バイナリ WebSocket フレームの構造
@@ -296,6 +416,22 @@ audio.stream_open 後に送信するバイナリ WebSocket フレームの構造
 - 受信側が未知イベントを受けた場合は、warning ログを残して無視してよい（v0 運用の後方互換ポリシー）。
 - interrupt 導入前の実装と共存するため、`request_id` は optional とし active request 解決を許容する。
 - rollout 順序は server 先行（受理のみ） -> firmware 送受信対応 -> strict validation 有効化とする。
+
+### 7.2 フェーズ 11 互換性メモ（device.servo 系）
+
+- `device.servo.move` / `device.servo.calibration.get` / `device.servo.calibration.set` / `device.servo.calibration.response` はすべて新規イベント追加であり、既存イベントの required フィールドは変更しない。
+- 旧 firmware が未知イベントを受信した場合は、warning ログを残して無視してよい（v0 の後方互換ポリシーを継承）。
+- サーボ未実装の firmware と共存するため、`device.servo.calibration.get` に対して response が返らない場合は server 側でタイムアウト（推奨: 3 秒）してエラーとして扱う。
+- rollout 順序は protocol 定義（P11-05） -> firmware ServoController 実装（P11-02） -> server hardware test API（P11-11） -> WebUI（P11-12）とする。
+- `device.servo.calibration.set` の差分更新セマンティクス（省略フィールドは現在値保持）は v0 内の additive change として許容する。
+
+### 7.3 フェーズ 11 互換性メモ（device.led / device.ears 系）
+
+- `device.led.set` / `device.ears.set` はすべて新規イベント追加であり、既存イベントの required フィールドは変更しない。
+- NECO MIMI 未接続機では `device.ears.set` を silent ignore するため、server 側は response を期待しない（fire-and-forget）。
+- `FW_NECO_MIMI_ENABLED` コンパイルフラグで NECO MIMI 対応を有効/無効化できる。未定義時は無効扱いとし、ランタイム警告だけ出す実装でもよい。
+- rollout 順序は protocol 定義（P11-06） -> firmware LedController / EarsController 実装（P11-03） -> server hardware test API（P11-11） -> WebUI（P11-12）とする。
+- 既存 firmware がこれらのイベントを受け取っても warning ログを残して無視してよい（v0 の後方互換ポリシーを継承）。
 
 ## 8. Deferred Candidates
 

@@ -1,0 +1,30 @@
+{
+  "type": "device.servo.calibration.response",
+  "timestamp": "2026-03-20T10:00:02Z",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sequence": 20,
+  "version": "1.0",
+  "payload": {
+    "request_id": "calib-get-001",
+    "x": {
+      "center_offset_deg": 3.0,
+      "min_deg": -45,
+      "max_deg": 45,
+      "invert": false,
+      "speed_limit_deg_per_sec": 60,
+      "soft_start": true,
+      "home_deg": 0
+    },
+    "y": {
+      "center_offset_deg": 0.0,
+      "min_deg": -30,
+      "max_deg": 30,
+      "invert": false,
+      "speed_limit_deg_per_sec": 60,
+      "soft_start": true,
+      "home_deg": 0
+    },
+    "current_angle_x_deg": 0.0,
+    "current_angle_y_deg": 0.0
+  }
+}

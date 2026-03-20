@@ -88,3 +88,37 @@ type TTSBufferWatermarkPayload struct {
 	ThresholdMs   int    `json:"threshold_ms"`    // 発火した watermark 閾値（ms）
 	FramesInQueue int    `json:"frames_in_queue"` // キュー内フレーム数
 }
+
+// DeviceStateReportPayload は device.state.report イベントのペイロードです（firmware -> server）。
+// P11-10/P11-13: firmware から送られる診断状態を WebUI Hardware Overview に可視化します。
+type DeviceStateReportPayload struct {
+	RequestID        string                       `json:"request_id,omitempty"`
+	Source           string                       `json:"source,omitempty"`
+	UptimeMs         int64                        `json:"uptime_ms"`
+	RSSI             int                          `json:"rssi"`
+	FreeHeapBytes    uint32                       `json:"free_heap_bytes"`
+	CurrentAngleXDeg float64                      `json:"current_angle_x_deg"`
+	CurrentAngleYDeg float64                      `json:"current_angle_y_deg"`
+	Calibration      DeviceServoCalibrationBundle `json:"calibration"`
+	MicLevel         float64                      `json:"mic_level"`
+	SpeakerBusy      bool                         `json:"speaker_busy"`
+	CameraAvailable  bool                         `json:"camera_available"`
+	FirmwareVersion  string                       `json:"firmware_version,omitempty"`
+}
+
+// DeviceServoCalibrationBundle は X/Y 両軸のサーボ校正値です。
+type DeviceServoCalibrationBundle struct {
+	X DeviceServoAxisCalibration `json:"x"`
+	Y DeviceServoAxisCalibration `json:"y"`
+}
+
+// DeviceServoAxisCalibration は 1 軸分のサーボ校正値です。
+type DeviceServoAxisCalibration struct {
+	CenterOffsetDeg     float64 `json:"center_offset_deg"`
+	MinDeg              float64 `json:"min_deg"`
+	MaxDeg              float64 `json:"max_deg"`
+	Invert              bool    `json:"invert"`
+	SpeedLimitDegPerSec float64 `json:"speed_limit_deg_per_sec"`
+	SoftStart           bool    `json:"soft_start"`
+	HomeDeg             float64 `json:"home_deg"`
+}

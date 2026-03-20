@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "device.ears.set",
+  "description": "耳 NeoPixel（NECO MIMI）を制御するイベント（server -> firmware）。NECO MIMI はオプションハードウェアのため、firmware は接続されていない場合は無視してよい。",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type":       { "const": "device.ears.set" },
+    "timestamp":  { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence":   { "type": "integer", "minimum": 1 },
+    "version":    { "const": "1.0" },
+    "payload":    { "$ref": "#/definitions/DeviceEarsSetPayload" }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DeviceEarsSetPayload": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "診断・ログ用の相関 ID（任意）"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["off", "solid", "blink", "breathe", "rainbow"],
+          "description": "点灯パターン。off=消灯 solid=単色点灯 blink=点滅 breathe=呼吸 rainbow=レインボー"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "description": "RGB カラーコード（例: #FF00FF）。mode=off / rainbow の場合は省略可"
+        },
+        "brightness": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "輝度（0〜255）。省略時は firmware のデフォルト値を使用"
+        },
+        "blink_interval_ms": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 5000,
+          "description": "blink モード時の点滅間隔（ms）。mode=blink のときのみ有効"
+        },
+        "breathe_period_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 10000,
+          "description": "breathe モード時の明暗 1 周期（ms）。mode=breathe のときのみ有効"
+        },
+        "rainbow_period_ms": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 30000,
+          "description": "rainbow モード時の色相 1 周期（ms）。mode=rainbow のときのみ有効"
+        }
+      },
+      "if": {
+        "properties": { "mode": { "enum": ["solid", "blink", "breathe"] } },
+        "required": ["mode"]
+      },
+      "then": { "required": ["color"] }
+    }
+  }
+}

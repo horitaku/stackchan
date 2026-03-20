@@ -12,6 +12,7 @@
     playback: {},
     pipeline: {},
     avatar: {},
+    hardware: {},
     updated_at: "-"
   };
   let settings = {
@@ -50,6 +51,51 @@
   let llmStackchanMotion = "nod";
   let llmStackchanChunkVersion = "1.1";
   let llmStackchanResult = "未実行";
+  let hardwareStatus = "未実行";
+  let hardwareStatusUpdatedAt = "-";
+  let speakerToneHz = 440;
+  let speakerDurationMs = 800;
+  let speakerVolume = 0.8;
+  let speakerTestResult = "未実行";
+  let micDurationMs = 1200;
+  let micSampleRateHz = 16000;
+  let micFrameDurationMs = 20;
+  let micTestResult = "未実行";
+  let touchStateLabel = "未取得";
+
+  let servoAxis = "both";
+  let servoXDeg = 0;
+  let servoYDeg = 0;
+  let servoSpeed = 1.0;
+  let servoCalAxis = "x";
+  let servoCenterOffsetDeg = 0;
+  let servoMinDeg = -45;
+  let servoMaxDeg = 45;
+  let servoInvert = false;
+  let servoSpeedLimitDegPerSec = 60;
+  let servoSoftStart = true;
+  let servoHomeDeg = 0;
+  let servoResult = "未実行";
+
+  let ledMode = "solid";
+  let ledColor = "#00BFFF";
+  let ledBrightness = 180;
+  let ledBlinkIntervalMs = 500;
+  let ledBreathePeriodMs = 2000;
+  let ledResult = "未実行";
+
+  let earsMode = "rainbow";
+  let earsColor = "#FF69B4";
+  let earsBrightness = 180;
+  let earsBlinkIntervalMs = 500;
+  let earsBreathePeriodMs = 1500;
+  let earsRainbowPeriodMs = 3000;
+  let earsResult = "未実行";
+
+  let cameraResolution = "qvga";
+  let cameraQuality = 12;
+  let cameraCaptureResult = "未実行";
+  let cameraLastCaptureAt = "-";
   let timerId;
 
   const fmtMs = (v) => `${v ?? 0} ms`;
@@ -61,9 +107,170 @@
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(body.error || `HTTP ${res.status}`);
+      const errorMessage = typeof body?.error === "string"
+        ? body.error
+        : (body?.error?.message || `HTTP ${res.status}`);
+      throw new Error(errorMessage);
     }
     return body;
+  }
+
+  async function postHardware(path, payload = {}) {
+    return fetchJSON(path, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function getHardwareState() {
+    hardwareStatus = "実行中...";
+    try {
+      const result = await fetchJSON("/api/tests/hardware/state");
+      hardwareStatus = JSON.stringify(result, null, 2);
+      hardwareStatusUpdatedAt = new Date().toLocaleTimeString("ja-JP");
+      touchStateLabel = "取得要求を送信済み";
+      await loadOverview();
+    } catch (err) {
+      hardwareStatus = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runSpeakerTest() {
+    speakerTestResult = "実行中...";
+    try {
+      const result = await postHardware("/api/tests/hardware/audio/play", {
+        tone_hz: Number(speakerToneHz),
+        duration_ms: Number(speakerDurationMs),
+        volume: Number(speakerVolume)
+      });
+      speakerTestResult = JSON.stringify(result, null, 2);
+      await loadOverview();
+    } catch (err) {
+      speakerTestResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runMicTest() {
+    micTestResult = "実行中...";
+    try {
+      const result = await postHardware("/api/tests/hardware/mic/start", {
+        duration_ms: Number(micDurationMs),
+        sample_rate_hz: Number(micSampleRateHz),
+        frame_duration_ms: Number(micFrameDurationMs)
+      });
+      micTestResult = JSON.stringify(result, null, 2);
+      touchStateLabel = "mic テスト開始要求を送信済み";
+      await loadOverview();
+    } catch (err) {
+      micTestResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runServoMove() {
+    servoResult = "実行中...";
+    try {
+      const payload = {
+        command: "move",
+        axis: servoAxis,
+        speed: Number(servoSpeed)
+      };
+      if (servoAxis === "x" || servoAxis === "both") {
+        payload.angle_x_deg = Number(servoXDeg);
+      }
+      if (servoAxis === "y" || servoAxis === "both") {
+        payload.angle_y_deg = Number(servoYDeg);
+      }
+      const result = await postHardware("/api/tests/hardware/servo", payload);
+      servoResult = JSON.stringify(result, null, 2);
+    } catch (err) {
+      servoResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runServoHome() {
+    servoAxis = "both";
+    servoXDeg = 0;
+    servoYDeg = 0;
+    await runServoMove();
+  }
+
+  async function runServoCalibrationGet() {
+    servoResult = "実行中...";
+    try {
+      const result = await postHardware("/api/tests/hardware/servo", {
+        command: "calibration_get"
+      });
+      servoResult = JSON.stringify(result, null, 2);
+    } catch (err) {
+      servoResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runServoCalibrationSet() {
+    servoResult = "実行中...";
+    try {
+      const result = await postHardware("/api/tests/hardware/servo", {
+        command: "calibration_set",
+        axis: servoCalAxis,
+        center_offset_deg: Number(servoCenterOffsetDeg),
+        min_deg: Number(servoMinDeg),
+        max_deg: Number(servoMaxDeg),
+        invert: Boolean(servoInvert),
+        speed_limit_deg_per_sec: Number(servoSpeedLimitDegPerSec),
+        soft_start: Boolean(servoSoftStart),
+        home_deg: Number(servoHomeDeg)
+      });
+      servoResult = JSON.stringify(result, null, 2);
+    } catch (err) {
+      servoResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runLedTest() {
+    ledResult = "実行中...";
+    try {
+      const result = await postHardware("/api/tests/hardware/led", {
+        mode: ledMode,
+        color: ledColor,
+        brightness: Number(ledBrightness),
+        blink_interval_ms: Number(ledBlinkIntervalMs),
+        breathe_period_ms: Number(ledBreathePeriodMs)
+      });
+      ledResult = JSON.stringify(result, null, 2);
+    } catch (err) {
+      ledResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runEarsTest() {
+    earsResult = "実行中...";
+    try {
+      const result = await postHardware("/api/tests/hardware/ears", {
+        mode: earsMode,
+        color: earsColor,
+        brightness: Number(earsBrightness),
+        blink_interval_ms: Number(earsBlinkIntervalMs),
+        breathe_period_ms: Number(earsBreathePeriodMs),
+        rainbow_period_ms: Number(earsRainbowPeriodMs)
+      });
+      earsResult = JSON.stringify(result, null, 2);
+    } catch (err) {
+      earsResult = `失敗: ${err.message}`;
+    }
+  }
+
+  async function runCameraCaptureTest() {
+    cameraCaptureResult = "実行中...";
+    try {
+      const result = await postHardware("/api/tests/hardware/camera/capture", {
+        resolution: cameraResolution,
+        quality: Number(cameraQuality)
+      });
+      cameraCaptureResult = JSON.stringify(result, null, 2);
+      cameraLastCaptureAt = new Date().toLocaleTimeString("ja-JP");
+    } catch (err) {
+      cameraCaptureResult = `失敗: ${err.message}`;
+    }
   }
 
   async function loadOverview() {
@@ -302,6 +509,29 @@
         <div><dt>update interval</dt><dd>{fmtMs(snapshot.avatar?.lip_sync_update_interval_ms || 0)}</dd></div>
       </dl>
     </article>
+
+    <article class="card">
+      <h2>Hardware Overview</h2>
+      {#if (snapshot.connection?.status || "").toLowerCase() !== "connected"}
+        <p class="message">デバイス未接続です。接続後に state.report が表示されます。</p>
+      {/if}
+      <dl>
+        <div><dt>last report</dt><dd>{snapshot.hardware?.last_report_at || "-"}</dd></div>
+        <div><dt>request_id</dt><dd>{snapshot.hardware?.request_id || "-"}</dd></div>
+        <div><dt>source</dt><dd>{snapshot.hardware?.source || "-"}</dd></div>
+        <div><dt>firmware</dt><dd>{snapshot.hardware?.firmware_version || "-"}</dd></div>
+        <div><dt>uptime</dt><dd>{fmtMs(snapshot.hardware?.uptime_ms || 0)}</dd></div>
+        <div><dt>rssi</dt><dd>{snapshot.hardware?.rssi ?? "-"}</dd></div>
+        <div><dt>free heap</dt><dd>{snapshot.hardware?.free_heap_bytes ?? 0}</dd></div>
+        <div><dt>current x</dt><dd>{snapshot.hardware?.current_angle_x_deg ?? 0}</dd></div>
+        <div><dt>current y</dt><dd>{snapshot.hardware?.current_angle_y_deg ?? 0}</dd></div>
+        <div><dt>mic level</dt><dd>{snapshot.hardware?.mic_level ?? 0}</dd></div>
+        <div><dt>speaker busy</dt><dd>{snapshot.hardware?.speaker_busy ? "yes" : "no"}</dd></div>
+        <div><dt>camera available</dt><dd>{snapshot.hardware?.camera_available ? "yes" : "no"}</dd></div>
+        <div><dt>calib x range</dt><dd>{snapshot.hardware?.calibration?.x?.min_deg ?? "-"} - {snapshot.hardware?.calibration?.x?.max_deg ?? "-"}</dd></div>
+        <div><dt>calib y range</dt><dd>{snapshot.hardware?.calibration?.y?.min_deg ?? "-"} - {snapshot.hardware?.calibration?.y?.max_deg ?? "-"}</dd></div>
+      </dl>
+    </article>
   </section>
 
   <section class="panel-group">
@@ -478,6 +708,183 @@
         </div>
       </form>
       <pre class="result">{llmStackchanResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>Hardware Test: Touch / Mic / Speaker</h2>
+      <p>入力と音声出力を API 経由で診断します。</p>
+      <div class="kv-row"><span>Touch state</span><strong>{touchStateLabel}</strong></div>
+      <form class="settings-form" on:submit|preventDefault={() => runSpeakerTest().catch(() => undefined)}>
+        <label>tone_hz
+          <input type="number" min="100" max="3000" bind:value={speakerToneHz} />
+        </label>
+        <label>duration_ms
+          <input type="number" min="100" max="5000" bind:value={speakerDurationMs} />
+        </label>
+        <label>volume
+          <input type="number" min="0" max="1" step="0.1" bind:value={speakerVolume} />
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">テストトーン再生</button>
+          <button type="button" class="btn" on:click={() => runMicTest().catch(() => undefined)}>mic テスト開始</button>
+          <button type="button" class="btn" on:click={() => getHardwareState().catch(() => undefined)}>状態更新</button>
+        </div>
+      </form>
+      <pre class="result">{speakerTestResult}</pre>
+      <pre class="result">{micTestResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>Hardware Test: Servo</h2>
+      <p>X/Y 手動制御と校正値保存を診断します。</p>
+      <form class="settings-form" on:submit|preventDefault={() => runServoMove().catch(() => undefined)}>
+        <label>axis
+          <select bind:value={servoAxis}>
+            <option value="x">x</option>
+            <option value="y">y</option>
+            <option value="both">both</option>
+          </select>
+        </label>
+        <label>X angle ({servoXDeg} deg)
+          <input type="range" min="-45" max="45" step="1" bind:value={servoXDeg} />
+        </label>
+        <label>Y angle ({servoYDeg} deg)
+          <input type="range" min="-45" max="45" step="1" bind:value={servoYDeg} />
+        </label>
+        <label>speed
+          <input type="number" min="0.1" max="3" step="0.1" bind:value={servoSpeed} />
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">X/Y を移動</button>
+          <button type="button" class="btn" on:click={() => runServoHome().catch(() => undefined)}>home へ戻す</button>
+          <button type="button" class="btn" on:click={() => runServoCalibrationGet().catch(() => undefined)}>校正読出し</button>
+        </div>
+      </form>
+      <div class="divider"></div>
+      <form class="settings-form" on:submit|preventDefault={() => runServoCalibrationSet().catch(() => undefined)}>
+        <label>calibration axis
+          <select bind:value={servoCalAxis}>
+            <option value="x">x</option>
+            <option value="y">y</option>
+          </select>
+        </label>
+        <label>center_offset_deg
+          <input type="number" step="0.1" bind:value={servoCenterOffsetDeg} />
+        </label>
+        <label>min_deg
+          <input type="number" step="1" bind:value={servoMinDeg} />
+        </label>
+        <label>max_deg
+          <input type="number" step="1" bind:value={servoMaxDeg} />
+        </label>
+        <label>speed_limit_deg_per_sec
+          <input type="number" min="1" max="360" step="1" bind:value={servoSpeedLimitDegPerSec} />
+        </label>
+        <label>home_deg
+          <input type="number" step="1" bind:value={servoHomeDeg} />
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={servoInvert} />
+          invert
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={servoSoftStart} />
+          soft_start
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">校正を保存</button>
+        </div>
+      </form>
+      <pre class="result">{servoResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>Hardware Test: LED / Ears</h2>
+      <p>M5GO LED と NECO MIMI の色・明るさ・パターンを診断します。</p>
+      <form class="settings-form" on:submit|preventDefault={() => runLedTest().catch(() => undefined)}>
+        <label>LED mode
+          <select bind:value={ledMode}>
+            <option value="off">off</option>
+            <option value="solid">solid</option>
+            <option value="blink">blink</option>
+            <option value="breathe">breathe</option>
+          </select>
+        </label>
+        <label>LED color (#RRGGBB)
+          <input type="text" bind:value={ledColor} />
+        </label>
+        <label>LED brightness
+          <input type="number" min="0" max="255" bind:value={ledBrightness} />
+        </label>
+        <label>LED blink_interval_ms
+          <input type="number" min="100" max="5000" bind:value={ledBlinkIntervalMs} />
+        </label>
+        <label>LED breathe_period_ms
+          <input type="number" min="200" max="10000" bind:value={ledBreathePeriodMs} />
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">LED 送信</button>
+        </div>
+      </form>
+      <pre class="result">{ledResult}</pre>
+
+      <div class="divider"></div>
+
+      <form class="settings-form" on:submit|preventDefault={() => runEarsTest().catch(() => undefined)}>
+        <label>Ears mode
+          <select bind:value={earsMode}>
+            <option value="off">off</option>
+            <option value="solid">solid</option>
+            <option value="blink">blink</option>
+            <option value="breathe">breathe</option>
+            <option value="rainbow">rainbow</option>
+          </select>
+        </label>
+        <label>Ears color (#RRGGBB)
+          <input type="text" bind:value={earsColor} />
+        </label>
+        <label>Ears brightness
+          <input type="number" min="0" max="255" bind:value={earsBrightness} />
+        </label>
+        <label>Ears blink_interval_ms
+          <input type="number" min="100" max="5000" bind:value={earsBlinkIntervalMs} />
+        </label>
+        <label>Ears breathe_period_ms
+          <input type="number" min="200" max="10000" bind:value={earsBreathePeriodMs} />
+        </label>
+        <label>Ears rainbow_period_ms
+          <input type="number" min="200" max="10000" bind:value={earsRainbowPeriodMs} />
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">Ears 送信</button>
+        </div>
+      </form>
+      <pre class="result">{earsResult}</pre>
+    </section>
+
+    <section class="card panel">
+      <h2>Hardware Test: Camera / State</h2>
+      <p>静止画取得要求とハードウェア状態要求を送信します。</p>
+      <form class="settings-form" on:submit|preventDefault={() => runCameraCaptureTest().catch(() => undefined)}>
+        <label>resolution
+          <select bind:value={cameraResolution}>
+            <option value="qqvga">qqvga</option>
+            <option value="qvga">qvga</option>
+            <option value="vga">vga</option>
+          </select>
+        </label>
+        <label>quality
+          <input type="number" min="1" max="63" bind:value={cameraQuality} />
+        </label>
+        <div class="controls">
+          <button type="submit" class="btn btn-primary">静止画取得</button>
+          <button type="button" class="btn" on:click={() => getHardwareState().catch(() => undefined)}>state.report 要求</button>
+        </div>
+      </form>
+      <p class="message">最終撮影要求: {cameraLastCaptureAt}</p>
+      <p class="message">最終状態更新: {hardwareStatusUpdatedAt}</p>
+      <pre class="result">{cameraCaptureResult}</pre>
+      <pre class="result">{hardwareStatus}</pre>
     </section>
   </section>
 

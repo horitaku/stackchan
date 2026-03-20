@@ -36,6 +36,9 @@
 #include "../../runtime/network/ws_client.h"
 #include "../../runtime/audio/mic_reader.h"
 #include "../../runtime/audio/tts_player.h"
+#include "../../runtime/actuators/servo_controller.h"
+#include "../../runtime/lighting/base_led_controller.h"
+#include "../../runtime/lighting/ear_neopixel_controller.h"
 #include "../../protocol/envelope.h"
 #include "../../protocol/events.h"
 
@@ -103,6 +106,9 @@ class StackchanSession {
   Network::WsClient  _ws;
   Audio::MicReader   _mic;
   Audio::TTSPlayer   _ttsPlayer;
+  Actuator::ServoController      _servo;  ///< P11-08: サーボ X/Y 制御サービス
+  Lighting::BaseLedController     _led;    ///< P11-03: M5GO Bottom3 RGB LED 制御サービス
+  Lighting::EarNeoPixelController _ear;    ///< P11-03: NECO MIMI NeoPixel 制御サービス
   Protocol::OutboundSequence _seq;
 
   SessionState  _state{SessionState::Idle};
@@ -228,6 +234,36 @@ class StackchanSession {
   void handleTTSStop(const String& payloadJson);
   void handleAudioStreamAbort(const String& payloadJson);
   void handleError(const String& payloadJson);
+
+  // ── P11-08: ハードウェア制御イベントハンドラー ──────────────────────────
+  // device.servo.* を受信したときに ServoController へ委譲します。
+  // 各ハンドラーは session_hardware.cpp に実装します。
+
+  /// device.servo.move: 論理角度移動指示
+  void handleDeviceServoMove(const String& payloadJson);
+  /// device.servo.calibration.get: 校正値の読み出し要求
+  void handleDeviceServoCalibrationGet(const String& payloadJson);
+  /// device.servo.calibration.set: 校正値の更新・保存
+  void handleDeviceServoCalibrationSet(const String& payloadJson);
+
+  // ── P11-03: LED / NeoPixel 制御イベントハンドラー ─────────────────────
+  // 各ハンドラーは session_hardware.cpp に実装します。
+
+  /// device.led.set: M5GO Bottom3 LED の点灯パターン制御
+  void handleDeviceLedSet(const String& payloadJson);
+  /// device.ears.set: NECO MIMI NeoPixel の点灯パターン制御（オプション）
+  void handleDeviceEarsSet(const String& payloadJson);
+
+  /// device.state.report 要求を受信し、診断状態を server へ送信します。
+  void handleDeviceStateReport(const String& payloadJson);
+  /// 現在のハードウェア診断状態を device.state.report として server へ送信します。
+  void sendDeviceStateReport(const String& requestId, const String& source);
+
+  /// device.servo.calibration.response を firmware → server へ送信します。
+  void sendServoCalibrationResponse(const String& requestId);
+
+  /// hardware コマンドのエラーを server へ通知する共通ヘルパー。
+  void sendDeviceError(const String& requestId, const char* code, const char* message, bool retryable = false);
   void clearIncomingTTSBuffer();
   bool appendIncomingTTSChunk(const String& requestId, int chunkIndex, int totalChunks, const String& audioBase64);
   void clearTTSFrameQueue();

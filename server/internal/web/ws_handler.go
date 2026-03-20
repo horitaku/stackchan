@@ -393,6 +393,24 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			wmPayload.FramesInQueue,
 		)
 
+	case "device.state.report":
+		// P11-13: firmware からのハードウェア状態レポートを受信し、
+		// Runtime Overview の hardware セクションへ反映します。
+		var hwPayload protocol.DeviceStateReportPayload
+		if err := json.Unmarshal(env.Payload, &hwPayload); err != nil {
+			log.Warn().Err(err).Msg("failed to parse device.state.report payload")
+			return false
+		}
+
+		h.runtimeState.OnDeviceStateReport(hwPayload)
+		log.Info().
+			Str("request_id", hwPayload.RequestID).
+			Int("rssi", hwPayload.RSSI).
+			Uint32("free_heap_bytes", hwPayload.FreeHeapBytes).
+			Bool("speaker_busy", hwPayload.SpeakerBusy).
+			Bool("camera_available", hwPayload.CameraAvailable).
+			Msg("device.state.report received")
+
 	default:
 		log.Warn().Str("type", env.Type).Msg("unhandled event type")
 	}
@@ -624,6 +642,40 @@ func (h *WSHandler) sendEventWithVersion(conn *websocket.Conn, s *session.Sessio
 		conn.SetWriteDeadline(time.Now().Add(time.Duration(h.writeTimeoutSec) * time.Second))
 	}
 	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// SendControlEventToActive は現在アクティブな handshaked セッションへ任意の制御イベントを送信します。
+// hardware test API から device.* イベントを中継する用途で利用します。
+func (h *WSHandler) SendControlEventToActive(msgType string, payload any) (string, error) {
+	h.mu.Lock()
+	sessionID := h.activeSessionID
+	conn := h.connections[sessionID]
+	h.mu.Unlock()
+
+	if sessionID == "" || conn == nil {
+		return "", fmt.Errorf("no active Stackchan session is connected")
+	}
+
+	s := h.manager.Get(sessionID)
+	if s == nil {
+		return "", fmt.Errorf("active Stackchan session is no longer available")
+	}
+
+	if strings.TrimSpace(msgType) == "" {
+		return "", fmt.Errorf("event type is required")
+	}
+
+	if err := h.sendEvent(conn, s, msgType, payload); err != nil {
+		h.mu.Lock()
+		if h.activeSessionID == sessionID {
+			h.activeSessionID = ""
+		}
+		delete(h.connections, sessionID)
+		h.mu.Unlock()
+		return "", err
+	}
+
+	return sessionID, nil
 }
 
 // SendTTSTestToActive は現在アクティブな handshaked セッションへ tts.end を送信します。

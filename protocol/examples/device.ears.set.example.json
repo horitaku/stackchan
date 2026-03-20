@@ -1,0 +1,14 @@
+{
+  "type": "device.ears.set",
+  "timestamp": "2025-06-15T10:00:01.000Z",
+  "session_id": "sess-abc123",
+  "sequence": 43,
+  "version": "1.0",
+  "payload": {
+    "request_id": "req-ears-001",
+    "mode": "breathe",
+    "color": "#FF69B4",
+    "brightness": 200,
+    "breathe_period_ms": 1500
+  }
+}

@@ -254,6 +254,11 @@ class StackchanSession {
   /// device.ears.set: NECO MIMI NeoPixel の点灯パターン制御（オプション）
   void handleDeviceEarsSet(const String& payloadJson);
 
+  /// device.state.report 要求を受信し、診断状態を server へ送信します。
+  void handleDeviceStateReport(const String& payloadJson);
+  /// 現在のハードウェア診断状態を device.state.report として server へ送信します。
+  void sendDeviceStateReport(const String& requestId, const String& source);
+
   /// device.servo.calibration.response を firmware → server へ送信します。
   void sendServoCalibrationResponse(const String& requestId);
 

@@ -26,7 +26,6 @@
 
 #include <Arduino.h>
 #include <ESP32Servo.h>
-#include <Preferences.h>
 #include <math.h>
 
 // ── モジュール内グローバル（ファイルスコープ） ──────────────────────────
@@ -34,15 +33,6 @@
 // ヘッダに ESP32Servo.h include が漏れるため、ここで static に管理します。
 static Servo g_servoX;
 static Servo g_servoY;
-
-// ── Preferences のキー定義 ───────────────────────────────────────────
-static constexpr const char* kKeyCenter  = "center_off";
-static constexpr const char* kKeyMinDeg  = "min_deg";
-static constexpr const char* kKeyMaxDeg  = "max_deg";
-static constexpr const char* kKeyInvert  = "invert";
-static constexpr const char* kKeySpeed   = "speed_lim";
-static constexpr const char* kKeySoft    = "soft_start";
-static constexpr const char* kKeyHome    = "home_deg";
 
 namespace Actuator {
 
@@ -189,7 +179,7 @@ bool ServoController::setCalibrationX(const ServoAxisCalibration& cal) {
     return false;
   }
   _calibX = cal;
-  const bool ok = saveCalibration("servo_x", _calibX);
+  const bool ok = _calibrationStore.saveX(_calibX);
   if (ok) {
     Serial.printf("[ServoController] calibX saved: center_off=%.1f min=%.1f max=%.1f invert=%d speed=%.1f home=%.1f\n",
       _calibX.center_offset_deg, _calibX.min_deg, _calibX.max_deg,
@@ -205,7 +195,7 @@ bool ServoController::setCalibrationY(const ServoAxisCalibration& cal) {
     return false;
   }
   _calibY = cal;
-  const bool ok = saveCalibration("servo_y", _calibY);
+  const bool ok = _calibrationStore.saveY(_calibY);
   if (ok) {
     Serial.printf("[ServoController] calibY saved: center_off=%.1f min=%.1f max=%.1f invert=%d speed=%.1f home=%.1f\n",
       _calibY.center_offset_deg, _calibY.min_deg, _calibY.max_deg,
@@ -258,36 +248,11 @@ int ServoController::logicalToMicros(float logicalDeg, const ServoAxisCalibratio
 }
 
 void ServoController::loadCalibration() {
-  Preferences prefs;
-
-  // X 軸の読み出し
-  if (prefs.begin("servo_x", /*readOnly=*/true)) {
-    _calibX.center_offset_deg     = prefs.getFloat(kKeyCenter, _calibX.center_offset_deg);
-    _calibX.min_deg               = prefs.getFloat(kKeyMinDeg, _calibX.min_deg);
-    _calibX.max_deg               = prefs.getFloat(kKeyMaxDeg, _calibX.max_deg);
-    _calibX.invert                = prefs.getBool (kKeyInvert, _calibX.invert);
-    _calibX.speed_limit_deg_per_sec = prefs.getFloat(kKeySpeed, _calibX.speed_limit_deg_per_sec);
-    _calibX.soft_start            = prefs.getBool (kKeySoft,   _calibX.soft_start);
-    _calibX.home_deg              = prefs.getFloat(kKeyHome,   _calibX.home_deg);
-    prefs.end();
-    Serial.println("[ServoController] calibX loaded from Preferences");
+  const bool loaded = _calibrationStore.load(&_calibX, &_calibY);
+  if (loaded) {
+    Serial.println("[ServoController] calibration loaded from ServoCalibrationStore");
   } else {
-    Serial.println("[ServoController] calibX: using defaults (no saved data)");
-  }
-
-  // Y 軸の読み出し
-  if (prefs.begin("servo_y", /*readOnly=*/true)) {
-    _calibY.center_offset_deg     = prefs.getFloat(kKeyCenter, _calibY.center_offset_deg);
-    _calibY.min_deg               = prefs.getFloat(kKeyMinDeg, _calibY.min_deg);
-    _calibY.max_deg               = prefs.getFloat(kKeyMaxDeg, _calibY.max_deg);
-    _calibY.invert                = prefs.getBool (kKeyInvert, _calibY.invert);
-    _calibY.speed_limit_deg_per_sec = prefs.getFloat(kKeySpeed, _calibY.speed_limit_deg_per_sec);
-    _calibY.soft_start            = prefs.getBool (kKeySoft,   _calibY.soft_start);
-    _calibY.home_deg              = prefs.getFloat(kKeyHome,   _calibY.home_deg);
-    prefs.end();
-    Serial.println("[ServoController] calibY loaded from Preferences");
-  } else {
-    Serial.println("[ServoController] calibY: using defaults (no saved data)");
+    Serial.println("[ServoController] WARN: calibration load failed, using defaults");
   }
 
   // min_deg < max_deg の保持整合性チェック（NVS 破損対策）
@@ -299,28 +264,6 @@ void ServoController::loadCalibration() {
     Serial.println("[ServoController] WARN: calibY corrupted, resetting to defaults");
     _calibY = ServoAxisCalibration{};
   }
-}
-
-bool ServoController::saveCalibration(const char* ns, const ServoAxisCalibration& cal) {
-  Preferences prefs;
-
-  // read-write モードで名前空間を開きます。
-  if (!prefs.begin(ns, /*readOnly=*/false)) {
-    Serial.printf("[ServoController] ERROR: Preferences.begin('%s') failed\n", ns);
-    return false;
-  }
-
-  // 全フィールドを書き込みます。
-  prefs.putFloat(kKeyCenter, cal.center_offset_deg);
-  prefs.putFloat(kKeyMinDeg, cal.min_deg);
-  prefs.putFloat(kKeyMaxDeg, cal.max_deg);
-  prefs.putBool (kKeyInvert, cal.invert);
-  prefs.putFloat(kKeySpeed,  cal.speed_limit_deg_per_sec);
-  prefs.putBool (kKeySoft,   cal.soft_start);
-  prefs.putFloat(kKeyHome,   cal.home_deg);
-  prefs.end();
-
-  return true;
 }
 
 }  // namespace Actuator

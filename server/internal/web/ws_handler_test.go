@@ -271,6 +271,70 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestDeviceStateReportUpdatesRuntimeOverview(t *testing.T) {
+	manager := session.NewManager()
+	handler := web.NewWSHandler(manager, 0, 0, nil)
+
+	r := gin.New()
+	r.GET("/ws", handler.Handle)
+
+	ts := httptest.NewServer(r)
+	defer ts.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
+	conn := dialWS(t, wsURL)
+
+	hello := buildEnvelope(t, "session.hello", 1, map[string]any{
+		"device_id":   "test-device-001",
+		"client_type": "firmware",
+	})
+	if err := conn.WriteMessage(websocket.TextMessage, hello); err != nil {
+		t.Fatalf("failed to send hello: %v", err)
+	}
+	_ = readEnvelope(t, conn)
+
+	stateReport := buildEnvelope(t, "device.state.report", 2, map[string]any{
+		"request_id":          "hw-state-123",
+		"source":              "webui.hardware_test",
+		"uptime_ms":           9999,
+		"rssi":                -47,
+		"free_heap_bytes":     345678,
+		"current_angle_x_deg": 10.0,
+		"current_angle_y_deg": -8.0,
+		"calibration": map[string]any{
+			"x": map[string]any{"min_deg": -45, "max_deg": 45},
+			"y": map[string]any{"min_deg": -30, "max_deg": 30},
+		},
+		"mic_level":        0.1,
+		"speaker_busy":     true,
+		"camera_available": false,
+		"firmware_version": "stackchan-cores3-01",
+	})
+	if err := conn.WriteMessage(websocket.TextMessage, stateReport); err != nil {
+		t.Fatalf("failed to send device.state.report: %v", err)
+	}
+
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := handler.RuntimeState().Snapshot()
+		if snapshot.Hardware.RequestID == "hw-state-123" {
+			if snapshot.Hardware.RSSI != -47 {
+				t.Fatalf("expected rssi=-47, got %d", snapshot.Hardware.RSSI)
+			}
+			if !snapshot.Hardware.SpeakerBusy {
+				t.Fatalf("expected speaker_busy=true")
+			}
+			if snapshot.Hardware.LastReportAt == "" || snapshot.Hardware.LastReportAt == "-" {
+				t.Fatalf("expected last_report_at to be populated, got %q", snapshot.Hardware.LastReportAt)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("device.state.report was not reflected to runtime snapshot")
+}
+
 // TestAudioEnd_ProviderErrorMapping は provider エラーが protocol error へ変換されることを確認します。
 func TestAudioEnd_ProviderErrorMapping(t *testing.T) {
 	manager := session.NewManager()

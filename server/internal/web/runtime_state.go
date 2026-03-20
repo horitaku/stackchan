@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/horitaku/stackchan/server/internal/logging"
+	"github.com/horitaku/stackchan/server/internal/protocol"
 )
 
 // RuntimeSnapshot は WebUI/API 向けに公開するランタイム状態のスナップショットです。
@@ -13,6 +14,7 @@ type RuntimeSnapshot struct {
 	Playback   PlaybackSnapshot   `json:"playback"`
 	Pipeline   PipelineSnapshot   `json:"pipeline"`
 	Avatar     AvatarSnapshot     `json:"avatar"`
+	Hardware   HardwareSnapshot   `json:"hardware"`
 	UpdatedAt  string             `json:"updated_at"`
 }
 
@@ -71,6 +73,23 @@ type AvatarSnapshot struct {
 	LipSyncUpdateIntervalMs int     `json:"lip_sync_update_interval_ms"`
 }
 
+// HardwareSnapshot は device.state.report から得た診断状態です。
+type HardwareSnapshot struct {
+	RequestID        string                                `json:"request_id,omitempty"`
+	Source           string                                `json:"source,omitempty"`
+	LastReportAt     string                                `json:"last_report_at,omitempty"`
+	UptimeMs         int64                                 `json:"uptime_ms"`
+	RSSI             int                                   `json:"rssi"`
+	FreeHeapBytes    uint32                                `json:"free_heap_bytes"`
+	CurrentAngleXDeg float64                               `json:"current_angle_x_deg"`
+	CurrentAngleYDeg float64                               `json:"current_angle_y_deg"`
+	Calibration      protocol.DeviceServoCalibrationBundle `json:"calibration"`
+	MicLevel         float64                               `json:"mic_level"`
+	SpeakerBusy      bool                                  `json:"speaker_busy"`
+	CameraAvailable  bool                                  `json:"camera_available"`
+	FirmwareVersion  string                                `json:"firmware_version,omitempty"`
+}
+
 // RuntimeState は WebSocket ハンドラで観測した状態を集約するスレッドセーフなストアです。
 type RuntimeState struct {
 	mu           sync.RWMutex
@@ -91,6 +110,9 @@ func NewRuntimeState() *RuntimeState {
 				Expression:              "neutral",
 				Motion:                  "idle",
 				LipSyncUpdateIntervalMs: 50,
+			},
+			Hardware: HardwareSnapshot{
+				LastReportAt: "-",
 			},
 			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		},
@@ -352,6 +374,27 @@ func (s *RuntimeState) OnAvatarExpression(expression string) {
 func (s *RuntimeState) OnAvatarMotion(motion string) {
 	s.mu.Lock()
 	s.snapshot.Avatar.Motion = motion
+	s.touchLocked()
+	s.mu.Unlock()
+}
+
+// OnDeviceStateReport は firmware から受信した device.state.report を保持します。
+func (s *RuntimeState) OnDeviceStateReport(payload protocol.DeviceStateReportPayload) {
+	now := time.Now().UTC()
+	s.mu.Lock()
+	s.snapshot.Hardware.RequestID = payload.RequestID
+	s.snapshot.Hardware.Source = payload.Source
+	s.snapshot.Hardware.LastReportAt = now.Format(time.RFC3339)
+	s.snapshot.Hardware.UptimeMs = payload.UptimeMs
+	s.snapshot.Hardware.RSSI = payload.RSSI
+	s.snapshot.Hardware.FreeHeapBytes = payload.FreeHeapBytes
+	s.snapshot.Hardware.CurrentAngleXDeg = payload.CurrentAngleXDeg
+	s.snapshot.Hardware.CurrentAngleYDeg = payload.CurrentAngleYDeg
+	s.snapshot.Hardware.Calibration = payload.Calibration
+	s.snapshot.Hardware.MicLevel = payload.MicLevel
+	s.snapshot.Hardware.SpeakerBusy = payload.SpeakerBusy
+	s.snapshot.Hardware.CameraAvailable = payload.CameraAvailable
+	s.snapshot.Hardware.FirmwareVersion = payload.FirmwareVersion
 	s.touchLocked()
 	s.mu.Unlock()
 }

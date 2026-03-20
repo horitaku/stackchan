@@ -264,3 +264,61 @@ func TestRunLLMStackchanTest_WSUnavailable(t *testing.T) {
 		t.Fatalf("expected 503, got %d", resp.StatusCode)
 	}
 }
+
+func TestHardwareAPIs_WSUnavailable(t *testing.T) {
+	ts := newAPITestServer(t)
+
+	testCases := []struct {
+		name   string
+		method string
+		path   string
+		body   map[string]any
+	}{
+		{name: "servo", method: http.MethodPost, path: "/api/tests/hardware/servo", body: map[string]any{"command": "move", "axis": "x", "angle_x_deg": 10}},
+		{name: "led", method: http.MethodPost, path: "/api/tests/hardware/led", body: map[string]any{"mode": "solid", "color": "#00FF00"}},
+		{name: "ears", method: http.MethodPost, path: "/api/tests/hardware/ears", body: map[string]any{"mode": "rainbow"}},
+		{name: "audio", method: http.MethodPost, path: "/api/tests/hardware/audio/play", body: map[string]any{"tone_hz": 440, "duration_ms": 500}},
+		{name: "mic", method: http.MethodPost, path: "/api/tests/hardware/mic/start", body: map[string]any{"duration_ms": 1000}},
+		{name: "camera", method: http.MethodPost, path: "/api/tests/hardware/camera/capture", body: map[string]any{"resolution": "qvga"}},
+		{name: "state", method: http.MethodGet, path: "/api/tests/hardware/state", body: nil},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req *http.Request
+			var err error
+			if tc.method == http.MethodGet {
+				req, err = http.NewRequest(tc.method, ts.URL+tc.path, nil)
+			} else {
+				body, _ := json.Marshal(tc.body)
+				req, err = http.NewRequest(tc.method, ts.URL+tc.path, bytes.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+			}
+			if err != nil {
+				t.Fatalf("failed to build request: %v", err)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusServiceUnavailable {
+				t.Fatalf("expected 503, got %d", resp.StatusCode)
+			}
+
+			var body map[string]any
+			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+				t.Fatalf("failed to decode response: %v", err)
+			}
+			errBody, ok := body["error"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected error object in response")
+			}
+			if errBody["code"] != "ws_unavailable" {
+				t.Fatalf("expected code=ws_unavailable, got %v", errBody["code"])
+			}
+		})
+	}
+}

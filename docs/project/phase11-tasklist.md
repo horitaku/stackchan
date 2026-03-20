@@ -150,12 +150,12 @@ WebUI には少なくとも次の 4 パネルを追加する。
 | P11-06 | device.led.set と device.ears.set を追加 | schema、examples、server/firmware 受信テスト | 高 | LED 系は安全かつ即効性の高い最初の制御対象であるため | 完了 |
 | P11-07 | audio / mic / camera / state report イベントを追加 | schema、examples、互換性メモ | 中 | 診断導線を広げる前に最小イベント集合を揃える必要があるため | 未着手 |
 | P11-08 | StackchanSession に hardware command router を追加 | 受信ディスパッチ整理、各サービスへの委譲、error handling | 高 | session の肥大化を抑えつつ、既存接続フローへ安全に統合するため | 完了 |
-| P11-09 | サーボ校正ストアを実装 | calibration モデル、不揮発保存、read/write API | 高 | 個体差調整を後回しにすると以後の servo UI が危険になるため | 未着手 |
-| P11-10 | device.state.report を firmware から送信 | RSSI / free heap / current angle / calibration / mic level / speaker busy / camera available / firmware version | 高 | WebUI の診断精度と運用時の切り分けを大きく改善するため | 未着手 |
-| P11-11 | server に hardware test API を追加 | /api/tests/hardware/*、session bridge、timeout handling、test | 高 | WebUI から firmware へ直接つながず既存の運用導線を流用するため | 未着手 |
-| P11-12 | WebUI Hardware Test 画面を追加 | Tests セクション拡張、Servo/LED/Audio/Camera パネル | 高 | 「押したら試せる」導線がこのフェーズのユーザー価値そのもののため | 未着手 |
-| P11-13 | Hardware Overview を追加 | device.state.report 可視化、最終更新時刻、未接続表示 | 中 | 状態確認と操作画面を分けることで運用時の見通しを良くするため | 未着手 |
-| P11-14 | 診断ログとランブックを追加 | runbook、操作手順、失敗時の見方、構造化ログ項目 | 中 | 実機差分や接続失敗時の MTTR を短縮するため | 未着手 |
+| P11-09 | サーボ校正ストアを実装 | calibration モデル、不揮発保存、read/write API | 高 | 個体差調整を後回しにすると以後の servo UI が危険になるため | 完了 |
+| P11-10 | device.state.report を firmware から送信 | RSSI / free heap / current angle / calibration / mic level / speaker busy / camera available / firmware version | 高 | WebUI の診断精度と運用時の切り分けを大きく改善するため | 完了 |
+| P11-11 | server に hardware test API を追加 | /api/tests/hardware/*、session bridge、timeout handling、test | 高 | WebUI から firmware へ直接つながず既存の運用導線を流用するため | 完了 |
+| P11-12 | WebUI Hardware Test 画面を追加 | Tests セクション拡張、Servo/LED/Audio/Camera パネル | 高 | 「押したら試せる」導線がこのフェーズのユーザー価値そのもののため | 完了 |
+| P11-13 | Hardware Overview を追加 | device.state.report 可視化、最終更新時刻、未接続表示 | 中 | 状態確認と操作画面を分けることで運用時の見通しを良くするため | 完了 |
+| P11-14 | 診断ログとランブックを追加 | runbook、操作手順、失敗時の見方、構造化ログ項目 | 中 | 実機差分や接続失敗時の MTTR を短縮するため | 完了 |
 
 ## 5. 優先順位と薄い縦スライス
 

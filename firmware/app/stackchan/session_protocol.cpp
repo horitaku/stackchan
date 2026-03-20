@@ -4,6 +4,7 @@
  */
 #include "session.h"
 #include <ArduinoJson.h>
+#include <esp_heap_caps.h>
 
 namespace App {
 
@@ -47,6 +48,82 @@ void StackchanSession::sendHeartbeat() {
     Serial.printf("[Session] heartbeat sent (uptime=%lu ms, rssi=%d dBm)\n",
       millis(), Network::getRSSI());
   }
+}
+
+void StackchanSession::sendDeviceStateReport(const String& requestId, const String& source) {
+  JsonDocument payload;
+  payload["request_id"] = requestId;
+  payload["source"] = source;
+  payload["uptime_ms"] = millis();
+  payload["rssi"] = Network::getRSSI();
+  payload["free_heap_bytes"] = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+
+  payload["current_angle_x_deg"] = _servo.currentAngleXDeg();
+  payload["current_angle_y_deg"] = _servo.currentAngleYDeg();
+
+  const auto& cx = _servo.calibrationX();
+  const auto& cy = _servo.calibrationY();
+
+  JsonObject calib = payload["calibration"].to<JsonObject>();
+  JsonObject x = calib["x"].to<JsonObject>();
+  x["center_offset_deg"] = cx.center_offset_deg;
+  x["min_deg"] = cx.min_deg;
+  x["max_deg"] = cx.max_deg;
+  x["invert"] = cx.invert;
+  x["speed_limit_deg_per_sec"] = cx.speed_limit_deg_per_sec;
+  x["soft_start"] = cx.soft_start;
+  x["home_deg"] = cx.home_deg;
+
+  JsonObject y = calib["y"].to<JsonObject>();
+  y["center_offset_deg"] = cy.center_offset_deg;
+  y["min_deg"] = cy.min_deg;
+  y["max_deg"] = cy.max_deg;
+  y["invert"] = cy.invert;
+  y["speed_limit_deg_per_sec"] = cy.speed_limit_deg_per_sec;
+  y["soft_start"] = cy.soft_start;
+  y["home_deg"] = cy.home_deg;
+
+  // Phase 11 時点では mic level の実計測配線が未導入のため 0.0 を返します。
+  payload["mic_level"] = 0.0f;
+  payload["speaker_busy"] = (_ttsPlayer.state() != Audio::PlaybackState::Idle);
+  // Phase 11 時点では CameraService 未導入のため false を返します。
+  payload["camera_available"] = false;
+
+#ifdef FW_DEVICE_ID
+  payload["firmware_version"] = FW_DEVICE_ID;
+#else
+  payload["firmware_version"] = "stackchan-firmware";
+#endif
+
+  String payloadStr;
+  serializeJson(payload, payloadStr);
+
+  String env = Protocol::buildEnvelope(
+    Protocol::EventType::DEVICE_STATE_REPORT, _sessionId, _seq.next(), payloadStr);
+
+  if (_ws.sendText(env)) {
+    Serial.printf("[StateReport] sent request_id=%s source=%s heap=%u rssi=%d\n",
+      requestId.c_str(), source.c_str(),
+      static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)), Network::getRSSI());
+  } else {
+    Serial.printf("[StateReport] send failed request_id=%s source=%s\n",
+      requestId.c_str(), source.c_str());
+  }
+}
+
+void StackchanSession::handleDeviceStateReport(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* requestId = payload["request_id"] | "";
+  const char* source = payload["source"] | "server.request";
+
+  if (strlen(requestId) == 0) {
+    sendDeviceStateReport(String("state-") + String(millis()), String(source));
+    return;
+  }
+
+  sendDeviceStateReport(String(requestId), String(source));
 }
 
 // P8-19: TTS バッファ watermark 状態を server へ送信します。
@@ -122,6 +199,8 @@ void StackchanSession::onTextMessage(const String& msg) {
     // P11-03: device.led.* / device.ears.* を Lighting コントローラーへ委譲します
     {Protocol::EventType::DEVICE_LED_SET,               &StackchanSession::handleDeviceLedSet},
     {Protocol::EventType::DEVICE_EARS_SET,              &StackchanSession::handleDeviceEarsSet},
+    // P11-10: server からの state.report 要求を処理し、診断状態を返送します
+    {Protocol::EventType::DEVICE_STATE_REPORT,          &StackchanSession::handleDeviceStateReport},
   };
 
   JsonDocument doc;

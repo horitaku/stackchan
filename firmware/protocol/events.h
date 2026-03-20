@@ -65,6 +65,10 @@ constexpr const char* DEVICE_LED_SET  = "device.led.set";
 /// NECO MIMI（NeoPixel）を制御する（オプションハードウェア：未接続時は警告ログのみ）
 constexpr const char* DEVICE_EARS_SET = "device.ears.set";
 
+// ── Bidirectional （ハードウェア診断状態、P11-10） ─────────────────────
+/// ハードウェア診断状態を要求・通知する（server->firmware 要求 / firmware->server レポート）
+constexpr const char* DEVICE_STATE_REPORT = "device.state.report";
+
 }  // namespace EventType
 
 /// このファームウェアが使用するプロトコルバージョン（events.md と一致させること）

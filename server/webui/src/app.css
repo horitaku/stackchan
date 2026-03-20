@@ -200,6 +200,21 @@ textarea {
   margin-top: 12px;
 }
 
+.divider {
+  margin: 10px 0;
+  border-top: 1px dashed rgba(19, 34, 61, 0.2);
+}
+
+.kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(17, 166, 157, 0.08);
+  margin-bottom: 10px;
+}
+
 .alerts {
   margin-top: 14px;
   display: grid;

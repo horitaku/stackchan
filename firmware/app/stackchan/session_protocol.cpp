@@ -86,8 +86,7 @@ void StackchanSession::sendDeviceStateReport(const String& requestId, const Stri
   // Phase 11 時点では mic level の実計測配線が未導入のため 0.0 を返します。
   payload["mic_level"] = 0.0f;
   payload["speaker_busy"] = (_ttsPlayer.state() != Audio::PlaybackState::Idle);
-  // Phase 11 時点では CameraService 未導入のため false を返します。
-  payload["camera_available"] = false;
+  payload["camera_available"] = _camera.available();
 
 #ifdef FW_DEVICE_ID
   payload["firmware_version"] = FW_DEVICE_ID;
@@ -199,6 +198,7 @@ void StackchanSession::onTextMessage(const String& msg) {
     // P11-03: device.led.* / device.ears.* を Lighting コントローラーへ委譲します
     {Protocol::EventType::DEVICE_LED_SET,               &StackchanSession::handleDeviceLedSet},
     {Protocol::EventType::DEVICE_EARS_SET,              &StackchanSession::handleDeviceEarsSet},
+    {Protocol::EventType::DEVICE_CAMERA_CAPTURE,        &StackchanSession::handleDeviceCameraCapture},
     // P11-10: server からの state.report 要求を処理し、診断状態を返送します
     {Protocol::EventType::DEVICE_STATE_REPORT,          &StackchanSession::handleDeviceStateReport},
   };

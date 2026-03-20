@@ -39,6 +39,8 @@
 #include "../../runtime/actuators/servo_controller.h"
 #include "../../runtime/lighting/base_led_controller.h"
 #include "../../runtime/lighting/ear_neopixel_controller.h"
+#include "../../runtime/input/touch_service.h"
+#include "../../runtime/vision/camera_service.h"
 #include "../../protocol/envelope.h"
 #include "../../protocol/events.h"
 
@@ -109,6 +111,8 @@ class StackchanSession {
   Actuator::ServoController      _servo;  ///< P11-08: サーボ X/Y 制御サービス
   Lighting::BaseLedController     _led;    ///< P11-03: M5GO Bottom3 RGB LED 制御サービス
   Lighting::EarNeoPixelController _ear;    ///< P11-03: NECO MIMI NeoPixel 制御サービス
+  Input::TouchService _touch;              ///< P11-04: タッチ入力サービス
+  Vision::CameraService _camera;           ///< P11-04: カメラ取得サービス
   Protocol::OutboundSequence _seq;
 
   SessionState  _state{SessionState::Idle};
@@ -123,6 +127,9 @@ class StackchanSession {
   // Wi-Fi 再接続管理
   unsigned long _wifiRetryDelayMs{FW_RECONNECT_BASE_MS};
   unsigned long _lastWiFiAttemptMs{0};
+
+  // タッチ起点のデバッグ音声送信を抑制するためのクールダウン管理
+  unsigned long _lastDebugAudioTriggerMs{0};
 
   // 再生・アバター状態（Phase 6）
   String _currentRequestId{""};
@@ -254,6 +261,9 @@ class StackchanSession {
   /// device.ears.set: NECO MIMI NeoPixel の点灯パターン制御（オプション）
   void handleDeviceEarsSet(const String& payloadJson);
 
+  /// device.camera.capture: カメラ静止画取得要求
+  void handleDeviceCameraCapture(const String& payloadJson);
+
   /// device.state.report 要求を受信し、診断状態を server へ送信します。
   void handleDeviceStateReport(const String& payloadJson);
   /// 現在のハードウェア診断状態を device.state.report として server へ送信します。
@@ -261,6 +271,11 @@ class StackchanSession {
 
   /// device.servo.calibration.response を firmware → server へ送信します。
   void sendServoCalibrationResponse(const String& requestId);
+
+  /// device.camera.capture.result を firmware → server へ送信します。
+  void sendCameraCaptureResult(const Vision::CaptureResult& result,
+                               const Vision::CaptureRequest& request,
+                               bool cameraAvailable);
 
   /// hardware コマンドのエラーを server へ通知する共通ヘルパー。
   void sendDeviceError(const String& requestId, const char* code, const char* message, bool retryable = false);

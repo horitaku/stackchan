@@ -6,7 +6,7 @@
  * Wi-Fi 接続 → WebSocket 接続 → セッション確立 → 音声送受信 の一連のフローを管理します。
  * 
  * 操作方法:
- *   - タッチスクリーンをタップ: テスト音声ストリームを送信します（デバッグ用）
+ *   - タッチスクリーンをタップ: TouchService 経由でテスト音声ストリームを送信します（デバッグ用）
  */
 #include <Arduino.h>
 #include "boards/cores3/board_config.h"
@@ -41,11 +41,4 @@ void loop() {
 
   // セッション状態の維持と heartbeat 送信を行います
   stackchan.loop();
-
-  // タッチ検出: テスト音声ストリームを送信します（デバッグ用）
-  if (M5.Touch.getCount() > 0 && M5.Touch.getDetail(0).wasClicked()) {
-    Serial.println("[Main] Touch detected → sendAudioStream()");
-    // 50 フレーム分（16kHz 20ms × 50 = 1 秒分）のテスト音声を送信します
-    stackchan.sendAudioStream(50);
-  }
 }

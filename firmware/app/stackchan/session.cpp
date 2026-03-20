@@ -12,7 +12,15 @@
 #include <ArduinoJson.h>
 #include <M5Unified.h>
 
+#ifndef FW_TOUCH_DEBUG_AUDIO_ENABLED
+#define FW_TOUCH_DEBUG_AUDIO_ENABLED 0
+#endif
+
 namespace App {
+
+namespace {
+constexpr unsigned long kDebugAudioTriggerCooldownMs = 2500;
+}
 
 StackchanSession::StackchanSession()
     : _mic(FW_AUDIO_SAMPLE_RATE, FW_AUDIO_FRAME_MS) {}
@@ -37,6 +45,8 @@ void StackchanSession::begin() {
   // FW_NECO_MIMI_ENABLED=0 の場合、_ear.begin() は何もしません（オプションHW）。
   _led.begin(FW_LED_NUM);
   _ear.begin(FW_NECO_MIMI_NUM_LEDS);
+  _touch.begin();
+  _camera.begin();
 
   // P8-07: M5Stack-Avatar の顔描画を開始します。
   _avatar.init();
@@ -114,6 +124,26 @@ void StackchanSession::loop() {
   // ── Producer: WebSocket ノンブロッキング受信 ──────────────────────────────
   // 受信フレーム到達時に自動的に onTextMessage() → enqueueTTSFrame() が実行されます
   _ws.loop();
+
+  // ── Input: タッチ入力更新（P11-04） ─────────────────────────────────────
+  _touch.update();
+#if FW_TOUCH_DEBUG_AUDIO_ENABLED
+  if (_touch.consumeClicked()) {
+    const unsigned long now = millis();
+
+    if (_conversationState != ConversationState::Idle) {
+      Serial.printf("[Session] touch debug trigger ignored: conversation_state=%s\n",
+        conversationStateName(_conversationState));
+    } else if ((now - _lastDebugAudioTriggerMs) < kDebugAudioTriggerCooldownMs) {
+      Serial.printf("[Session] touch debug trigger ignored: cooldown=%lu ms remaining\n",
+        kDebugAudioTriggerCooldownMs - (now - _lastDebugAudioTriggerMs));
+    } else {
+      _lastDebugAudioTriggerMs = now;
+      Serial.println("[Session] touch clicked -> sendAudioStream() for debug");
+      sendAudioStream(50);
+    }
+  }
+#endif
 
   // ── TTS 再生状態の更新 ────────────────────────────────────────────
   _ttsPlayer.update();

@@ -58,6 +58,8 @@ constexpr const char* DEVICE_SERVO_CALIBRATION_SET   = "device.servo.calibration
 // ── Firmware → Server （ハードウェア応答、P11-05） ──────────────────────
 /// calibration.get への応答（校正値 + 現在角度）
 constexpr const char* DEVICE_SERVO_CALIBRATION_RESPONSE = "device.servo.calibration.response";
+/// camera.capture への応答（撮影結果メタデータ）
+constexpr const char* DEVICE_CAMERA_CAPTURE_RESULT = "device.camera.capture.result";
 
 // ── Server → Firmware （LED/NeoPixel 制御、P11-06） ─────────────────────
 /// M5GO Bottom3 の RGB LED を制御する（必須ハードウェア）

@@ -309,6 +309,58 @@ void StackchanSession::sendServoCalibrationResponse(const String& requestId) {
   }
 }
 
+void StackchanSession::sendCameraCaptureResult(
+    const Vision::CaptureResult& result,
+    const Vision::CaptureRequest& request,
+    bool cameraAvailable) {
+  JsonDocument payload;
+  payload["request_id"] = request.requestId;
+  payload["ok"] = result.accepted;
+  payload["camera_available"] = cameraAvailable;
+
+  if (request.resolution.length() > 0) {
+    payload["requested_resolution"] = request.resolution;
+  }
+  if (request.quality >= 0) {
+    payload["requested_quality"] = request.quality;
+  }
+
+  if (result.reason.length() > 0) {
+    payload["reason"] = result.reason;
+  }
+  if (result.captureId.length() > 0) {
+    payload["capture_id"] = result.captureId;
+  }
+  if (result.capturedAtMs > 0) {
+    payload["captured_at_ms"] = result.capturedAtMs;
+  }
+  if (result.imageBytes > 0) {
+    payload["image_bytes"] = static_cast<uint32_t>(result.imageBytes);
+  }
+  if (result.width > 0) {
+    payload["width"] = result.width;
+  }
+  if (result.height > 0) {
+    payload["height"] = result.height;
+  }
+
+  String payloadStr;
+  serializeJson(payload, payloadStr);
+
+  String env = Protocol::buildEnvelope(
+    Protocol::EventType::DEVICE_CAMERA_CAPTURE_RESULT,
+    _sessionId, _seq.next(), payloadStr);
+
+  if (_ws.sendText(env)) {
+    Serial.printf("[HWCmd] camera.capture.result sent request_id=%s ok=%d bytes=%u\n",
+      request.requestId.c_str(), result.accepted ? 1 : 0,
+      static_cast<unsigned>(result.imageBytes));
+  } else {
+    Serial.printf("[HWCmd] camera.capture.result send failed request_id=%s\n",
+      request.requestId.c_str());
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // device.led.set ハンドラー
 // ──────────────────────────────────────────────────────────────────────
@@ -450,6 +502,40 @@ void StackchanSession::handleDeviceEarsSet(const String& payloadJson) {
     modeStr, (unsigned)colorRGB, brightness, requestId);
 
   _ear.setMode(mode, colorRGB, brightness, blinkIntervalMs, breathePeriodMs, rainbowPeriodMs);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// device.camera.capture ハンドラー
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief device.camera.capture イベントを CameraService へ委譲します。
+ *
+ * @section バリデーション
+ * - request_id は必須
+ * - resolution / quality は任意
+ *
+ * @section エラー時の動作
+ * - request_id 不足: invalid_payload
+ * - camera 利用不可または capture 失敗: device_error
+ */
+void StackchanSession::handleDeviceCameraCapture(const String& payloadJson) {
+  JsonDocument payload;
+  deserializeJson(payload, payloadJson);
+
+  const char* requestId = payload["request_id"] | "";
+  if (strlen(requestId) == 0) {
+    sendDeviceError("", "invalid_payload", "request_id required for camera.capture", false);
+    return;
+  }
+
+  Vision::CaptureRequest req;
+  req.requestId = String(requestId);
+  req.resolution = String(payload["resolution"] | "");
+  req.quality = payload["quality"] | -1;
+
+  const Vision::CaptureResult result = _camera.capture(req);
+  sendCameraCaptureResult(result, req, _camera.available());
 }
 
 }  // namespace App

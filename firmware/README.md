@@ -27,6 +27,14 @@ build_flags =
   -DFW_DEVICE_ID='"stackchan-cores3-01"'
 ```
 
+カメラ設定を切り替える場合は `platformio.ini.local` に次を追加してください。
+
+```ini
+[camera]
+; CoreS3: 1 / CoreS3 SE: 0
+enabled = 0
+```
+
 ### 2.2 include/secrets.h
 
 ```bash

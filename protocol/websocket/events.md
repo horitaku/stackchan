@@ -422,16 +422,37 @@
 ## 5.20 device.camera.capture（P11-07）
 
 - Direction: server -> firmware
-- Purpose: カメラ静止画取得を指示する（初期フェーズは capture 要求のみ）
+- Purpose: カメラ静止画取得を指示する
 - JSON Schema: `protocol/websocket/schemas/device.camera.capture.schema.json`
 - Example: `protocol/examples/device.camera.capture.example.json`
 - Payload fields:
   - request_id: string (required) — 診断・ログ用相関 ID
   - resolution: string (optional, enum: qqvga, qvga, vga) — 撮影解像度
   - quality: integer (optional, 1–63) — JPEG quality（1=高品質, 63=低品質）
-- Event role: control command（即時反映、ack なし）
+- Response: `device.camera.capture.result`（同一 request_id を mirror）
+- Event role: request/response
 
-## 5.21 device.state.report（P11-07）
+## 5.21 device.camera.capture.result（P11-16）
+
+- Direction: firmware -> server
+- Purpose: device.camera.capture の実行結果を返す
+- JSON Schema: `protocol/websocket/schemas/device.camera.capture.result.schema.json`
+- Example: `protocol/examples/device.camera.capture.result.example.json`
+- Payload fields:
+  - request_id: string (required) — device.camera.capture の request_id をそのまま返す
+  - ok: boolean (required) — 撮影成功可否
+  - reason: string (optional) — 失敗理由または補足
+  - capture_id: string (optional) — firmware 内部の撮影ID
+  - captured_at_ms: integer (optional, minimum: 0) — firmware uptime 기준の撮影時刻
+  - image_bytes: integer (optional, minimum: 0) — 取得画像のバイト数
+  - width: integer (optional, minimum: 0) — 画像幅
+  - height: integer (optional, minimum: 0) — 画像高
+  - requested_resolution: string (optional, enum: qqvga, qvga, vga) — 要求解像度（正規化後）
+  - requested_quality: integer (optional, 1–63) — 要求 quality（適用後）
+  - camera_available: boolean (required) — 返却時点のカメラ利用可否
+- Event role: request/response
+
+## 5.22 device.state.report（P11-07）
 
 - Direction: bidirectional
 - Purpose: 診断状態の要求（server -> firmware）と状態レポート通知（firmware -> server）

@@ -266,3 +266,109 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* P11-17: Camera Result Preview & Metadata */
+.camera-result {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(17, 166, 157, 0.06);
+  border: 1px solid rgba(17, 166, 157, 0.2);
+}
+
+.result-success {
+  color: var(--ink);
+}
+
+.result-success h3 {
+  margin: 0 0 12px;
+  color: #2fb783;
+  font-size: 1.1rem;
+}
+
+.result-error {
+  color: var(--ink);
+}
+
+.result-error h3 {
+  margin: 0 0 12px;
+  color: var(--danger);
+  font-size: 1.1rem;
+}
+
+.error-reason {
+  margin: 8px 0;
+  padding: 10px;
+  background: rgba(202, 44, 66, 0.08);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.camera-preview {
+  margin: 14px 0;
+  text-align: center;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(19, 34, 61, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.metadata-table {
+  margin: 12px 0;
+}
+
+.metadata-table h4 {
+  margin: 8px 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.metadata-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.metadata-table table tr {
+  border-bottom: 1px solid rgba(17, 166, 157, 0.15);
+}
+
+.metadata-table table td {
+  padding: 8px 10px;
+}
+
+.metadata-table table td.label {
+  font-weight: 600;
+  color: var(--muted);
+  width: 40%;
+  background: rgba(17, 166, 157, 0.08);
+}
+
+.metadata-table table tr:last-child {
+  border-bottom: none;
+}
+
+.result-json-section {
+  margin-top: 12px;
+}
+
+.result-json-section summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(19, 34, 61, 0.04);
+  user-select: none;
+}
+
+.result-json-section summary:hover {
+  background: rgba(19, 34, 61, 0.08);
+}

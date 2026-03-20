@@ -579,7 +579,63 @@ func (h *APIHandler) RunHardwareCameraCaptureTest(c *gin.Context) {
 		payload["quality"] = *req.Quality
 	}
 
-	h.respondHardwareDispatch(c, hwEventCameraCapture, reqID, "capture", req.TimeoutMs, payload)
+	timeoutMs := req.TimeoutMs
+	if timeoutMs <= 0 {
+		timeoutMs = defaultHardwareDispatchTimeoutMs
+	}
+
+	sessionID, err := h.sendHardwareEventWithTimeout(c.Request.Context(), hwEventCameraCapture, payload, timeoutMs)
+	if err != nil {
+		errMessage := err.Error()
+		errorCode := "dispatch_failed"
+		statusCode := http.StatusBadGateway
+		switch {
+		case strings.Contains(errMessage, "timeout"):
+			errorCode = "dispatch_timeout"
+			statusCode = http.StatusGatewayTimeout
+		case strings.Contains(errMessage, "no active Stackchan session"):
+			errorCode = "stackchan_not_connected"
+			statusCode = http.StatusConflict
+		}
+		h.writeHardwareError(c, statusCode, errorCode, errMessage, true)
+		return
+	}
+
+	result, err := h.wsHandler.AwaitCameraCaptureResult(reqID, timeoutMs)
+	if err != nil {
+		h.writeHardwareError(c, http.StatusGatewayTimeout, "camera_capture_timeout", err.Error(), true)
+		return
+	}
+
+	if !result.OK {
+		reason := strings.TrimSpace(result.Reason)
+		if reason == "" {
+			reason = "camera capture failed"
+		}
+		h.writeHardwareError(c, http.StatusBadGateway, "camera_capture_failed", reason, true)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":            "completed",
+		"event_type":        hwEventCameraCapture,
+		"request_id":        reqID,
+		"target_session_id": sessionID,
+		"command":           "capture",
+		"result": gin.H{
+			"ok":                   result.OK,
+			"capture_id":           result.CaptureID,
+			"captured_at_ms":       result.CapturedAtMs,
+			"image_bytes":          result.ImageBytes,
+			"width":                result.Width,
+			"height":               result.Height,
+			"requested_resolution": result.RequestedResolution,
+			"requested_quality":    result.RequestedQuality,
+			"camera_available":     result.CameraAvailable,
+		},
+		"timeout_ms": timeoutMs,
+		"sent_at":     time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // GetHardwareState は診断向け state.report 要求を active session へ送信します。

@@ -38,6 +38,7 @@ type WSHandler struct {
 	mu              sync.Mutex
 	connections     map[string]*websocket.Conn
 	activeSessionID string
+	pendingCameraCapture map[string]chan protocol.DeviceCameraCaptureResultPayload
 }
 
 const ttsChunkByteSize = 512
@@ -77,6 +78,77 @@ func NewWSHandler(manager *session.Manager, readTimeoutSec, writeTimeoutSec int,
 		orchestrator:    orchestrator,
 		runtimeState:    runtimeState,
 		connections:     make(map[string]*websocket.Conn),
+		pendingCameraCapture: make(map[string]chan protocol.DeviceCameraCaptureResultPayload),
+	}
+}
+
+func (h *WSHandler) registerPendingCameraCapture(requestID string) (chan protocol.DeviceCameraCaptureResultPayload, error) {
+	if strings.TrimSpace(requestID) == "" {
+		return nil, fmt.Errorf("request_id is required")
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if _, exists := h.pendingCameraCapture[requestID]; exists {
+		return nil, fmt.Errorf("request_id is already pending")
+	}
+
+	ch := make(chan protocol.DeviceCameraCaptureResultPayload, 1)
+	h.pendingCameraCapture[requestID] = ch
+	return ch, nil
+}
+
+func (h *WSHandler) resolvePendingCameraCapture(payload protocol.DeviceCameraCaptureResultPayload) {
+	if strings.TrimSpace(payload.RequestID) == "" {
+		return
+	}
+
+	h.mu.Lock()
+	ch, ok := h.pendingCameraCapture[payload.RequestID]
+	if ok {
+		delete(h.pendingCameraCapture, payload.RequestID)
+	}
+	h.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	select {
+	case ch <- payload:
+	default:
+	}
+	close(ch)
+}
+
+// AwaitCameraCaptureResult は request_id に対応する camera.capture.result を待ち受けます。
+func (h *WSHandler) AwaitCameraCaptureResult(requestID string, timeoutMs int) (protocol.DeviceCameraCaptureResultPayload, error) {
+	if timeoutMs <= 0 {
+		timeoutMs = defaultHardwareDispatchTimeoutMs
+	}
+
+	ch, err := h.registerPendingCameraCapture(requestID)
+	if err != nil {
+		return protocol.DeviceCameraCaptureResultPayload{}, err
+	}
+
+	defer func() {
+		h.mu.Lock()
+		if current, exists := h.pendingCameraCapture[requestID]; exists && current == ch {
+			delete(h.pendingCameraCapture, requestID)
+		}
+		h.mu.Unlock()
+	}()
+
+	timer := time.NewTimer(time.Duration(timeoutMs) * time.Millisecond)
+	defer timer.Stop()
+
+	select {
+	case payload := <-ch:
+		return payload, nil
+	case <-timer.C:
+		return protocol.DeviceCameraCaptureResultPayload{}, fmt.Errorf("camera capture response timeout")
 	}
 }
 
@@ -410,6 +482,22 @@ func (h *WSHandler) dispatch(ctx context.Context, conn *websocket.Conn, s *sessi
 			Bool("speaker_busy", hwPayload.SpeakerBusy).
 			Bool("camera_available", hwPayload.CameraAvailable).
 			Msg("device.state.report received")
+
+	case "device.camera.capture.result":
+		var capturePayload protocol.DeviceCameraCaptureResultPayload
+		if err := json.Unmarshal(env.Payload, &capturePayload); err != nil {
+			log.Warn().Err(err).Msg("failed to parse device.camera.capture.result payload")
+			return false
+		}
+		h.resolvePendingCameraCapture(capturePayload)
+		log.Info().
+			Str("request_id", capturePayload.RequestID).
+			Bool("ok", capturePayload.OK).
+			Int("image_bytes", capturePayload.ImageBytes).
+			Int("width", capturePayload.Width).
+			Int("height", capturePayload.Height).
+			Str("reason", capturePayload.Reason).
+			Msg("device.camera.capture.result received")
 
 	default:
 		log.Warn().Str("type", env.Type).Msg("unhandled event type")

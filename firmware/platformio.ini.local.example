@@ -4,3 +4,8 @@
 [stackchan]
 ; サーバーPCの実IPに合わせて変更してください。
 ws_url = ws://192.168.86.21:8080/ws
+
+[camera]
+; CoreS3（カメラ搭載）: 1
+; CoreS3 SE（カメラ非搭載）: 0
+enabled = 1

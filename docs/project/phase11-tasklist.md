@@ -145,7 +145,7 @@ WebUI には少なくとも次の 4 パネルを追加する。
 | P11-01 | firmware ハードウェア責務の棚卸しと境界定義 | docs 追記、責務一覧、既存 StackchanSession 依存マップ | 高 | いきなり実装分割すると責務漏れや循環参照が起きやすいため | 完了 |
 | P11-02 | ServoController サービスを追加 | firmware/runtime/actuators/servo_controller.*、インターフェース、初期化方針 | 高 | サーボ校正と安全制御が以後の診断導線の中核になるため | 完了 |
 | P11-03 | LED / Ear NeoPixel サービスを追加 | firmware/runtime/lighting/base_led_controller.*、ear_neopixel_controller.* | 高 | 視覚的フィードバックが早く、Hardware Test の価値をすぐ出せるため | 完了 |
-| P11-04 | Touch / Camera サービス境界を追加 | firmware/runtime/input/touch_service.*、vision/camera_service.* | 中 | タッチ反映と静止画取得の入口を session から分離するため | 未着手 |
+| P11-04 | Touch / Camera サービス境界を追加 | firmware/runtime/input/touch_service.*、vision/camera_service.* | 中 | タッチ反映と静止画取得の入口を session から分離するため | 完了 |
 | P11-05 | device.servo 系 protocol を追加 | schema、examples、events.md、validation checklist 更新 | 高 | move と calibration を先に契約化しないと UI / server / firmware がずれるため | 完了 |
 | P11-06 | device.led.set と device.ears.set を追加 | schema、examples、server/firmware 受信テスト | 高 | LED 系は安全かつ即効性の高い最初の制御対象であるため | 完了 |
 | P11-07 | audio / mic / camera / state report イベントを追加 | schema、examples、互換性メモ | 中 | 診断導線を広げる前に最小イベント集合を揃える必要があるため | 完了 |
@@ -156,6 +156,9 @@ WebUI には少なくとも次の 4 パネルを追加する。
 | P11-12 | WebUI Hardware Test 画面を追加 | Tests セクション拡張、Servo/LED/Audio/Camera パネル | 高 | 「押したら試せる」導線がこのフェーズのユーザー価値そのもののため | 完了 |
 | P11-13 | Hardware Overview を追加 | device.state.report 可視化、最終更新時刻、未接続表示 | 中 | 状態確認と操作画面を分けることで運用時の見通しを良くするため | 完了 |
 | P11-14 | 診断ログとランブックを追加 | runbook、操作手順、失敗時の見方、構造化ログ項目 | 中 | 実機差分や接続失敗時の MTTR を短縮するため | 完了 |
+| P11-15 | CameraService の実撮影バックエンドを実装 | camera 初期化、capture 実装、resolution/quality 反映、camera_available 実値化 | 高 | 現状は camera.capture が受理のみで、実際の撮影結果を返せないため | 完了 |
+| P11-16 | camera.capture の結果返却イベントと server 待受を追加 | firmware 応答イベント、server 側相関待受、timeout/error 標準化 | 高 | WebUI から「押した結果が成功か失敗か」を即時判定できるようにするため | 完了 |
+| P11-17 | WebUI Camera パネルにプレビュー導線を追加 | 最終画像表示、サイズ/撮影時刻/遅延表示、失敗理由表示 | 中 | 「撮れたかどうか」を操作画面で完結して確認できるようにするため | 完了 |
 
 ## 5. 優先順位と薄い縦スライス
 

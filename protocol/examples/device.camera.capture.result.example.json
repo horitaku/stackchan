@@ -1,0 +1,19 @@
+{
+  "type": "device.camera.capture.result",
+  "timestamp": "2026-03-20T10:07:01Z",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sequence": 34,
+  "version": "1.0",
+  "payload": {
+    "request_id": "hw-camera-001",
+    "ok": true,
+    "capture_id": "hw-camera-001",
+    "captured_at_ms": 123456,
+    "image_bytes": 18234,
+    "width": 320,
+    "height": 240,
+    "requested_resolution": "qvga",
+    "requested_quality": 12,
+    "camera_available": true
+  }
+}

@@ -95,7 +95,9 @@
   let cameraResolution = "qvga";
   let cameraQuality = 12;
   let cameraCaptureResult = "未実行";
+  let cameraCaptureRecent = null; // パース済みの結果オブジェクト
   let cameraLastCaptureAt = "-";
+  let cameraLatencyMs = 0;
   let timerId;
 
   const fmtMs = (v) => `${v ?? 0} ms`;
@@ -261,15 +263,21 @@
 
   async function runCameraCaptureTest() {
     cameraCaptureResult = "実行中...";
+    cameraCaptureRecent = null;
+    const startTime = Date.now();
     try {
       const result = await postHardware("/api/tests/hardware/camera/capture", {
         resolution: cameraResolution,
         quality: Number(cameraQuality)
       });
+      const latency = Date.now() - startTime;
+      cameraLatencyMs = latency;
+      cameraCaptureRecent = result;
       cameraCaptureResult = JSON.stringify(result, null, 2);
       cameraLastCaptureAt = new Date().toLocaleTimeString("ja-JP");
     } catch (err) {
       cameraCaptureResult = `失敗: ${err.message}`;
+      cameraCaptureRecent = null;
     }
   }
 
@@ -879,12 +887,130 @@
         <div class="controls">
           <button type="submit" class="btn btn-primary">静止画取得</button>
           <button type="button" class="btn" on:click={() => getHardwareState().catch(() => undefined)}>state.report 要求</button>
+          <button type="button" class="btn" on:click={() => { cameraCaptureRecent = null; cameraCaptureResult = "未実行"; }}>結果クリア</button>
         </div>
       </form>
+
+      {#if cameraCaptureRecent}
+        <div class="camera-result">
+          {#if cameraCaptureRecent.result?.ok}
+            <div class="result-success">
+              <h3>✅ 撮影成功</h3>
+              
+              {#if cameraCaptureRecent.result?.image_base64}
+                <div class="camera-preview">
+                  <img 
+                    src="data:image/jpeg;base64,{cameraCaptureRecent.result.image_base64}" 
+                    alt="Camera Capture Preview"
+                    class="preview-image"
+                  />
+                </div>
+              {/if}
+
+              <div class="metadata-table">
+                <h4>撮影情報</h4>
+                <table>
+                  <tbody>
+                    <tr>
+                      <td class="label">Request ID</td>
+                      <td>{cameraCaptureRecent.request_id || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td class="label">Capture ID</td>
+                      <td>{cameraCaptureRecent.result?.capture_id || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td class="label">時刻（device uptime）</td>
+                      <td>{cameraCaptureRecent.result?.captured_at_ms || "-"} ms</td>
+                    </tr>
+                    <tr>
+                      <td class="label">API 遅延</td>
+                      <td>{cameraLatencyMs} ms</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="metadata-table">
+                <h4>画像情報</h4>
+                <table>
+                  <tbody>
+                    <tr>
+                      <td class="label">解像度（要求）</td>
+                      <td>{cameraCaptureRecent.result?.requested_resolution || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td class="label">品質（要求）</td>
+                      <td>{cameraCaptureRecent.result?.requested_quality || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td class="label">実寸法</td>
+                      <td>{cameraCaptureRecent.result?.width || "?"} × {cameraCaptureRecent.result?.height || "?"} px</td>
+                    </tr>
+                    <tr>
+                      <td class="label">データサイズ</td>
+                      <td>{cameraCaptureRecent.result?.image_bytes || "-"} bytes</td>
+                    </tr>
+                    <tr>
+                      <td class="label">カメラ利用可</td>
+                      <td>{cameraCaptureRecent.result?.camera_available ? "✅ Yes" : "❌ No"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <p class="message">📸 最終撮影: {cameraLastCaptureAt}</p>
+            </div>
+          {:else}
+            <div class="result-error">
+              <h3>❌ 撮影失敗</h3>
+              <p class="error-reason">
+                <strong>理由：</strong> {cameraCaptureRecent.result?.reason || "不明なエラー"}
+              </p>
+              <div class="metadata-table">
+                <h4>詳細情報</h4>
+                <table>
+                  <tbody>
+                    <tr>
+                      <td class="label">Request ID</td>
+                      <td>{cameraCaptureRecent.request_id || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td class="label">API 遅延</td>
+                      <td>{cameraLatencyMs} ms</td>
+                    </tr>
+                    <tr>
+                      <td class="label">カメラ利用可</td>
+                      <td>{cameraCaptureRecent.result?.camera_available ? "✅ Yes" : "❌ No"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
+
       <p class="message">最終撮影要求: {cameraLastCaptureAt}</p>
       <p class="message">最終状態更新: {hardwareStatusUpdatedAt}</p>
-      <pre class="result">{cameraCaptureResult}</pre>
-      <pre class="result">{hardwareStatus}</pre>
+      
+      {#if cameraCaptureResult !== "未実行" && !cameraCaptureRecent}
+        <div class="result-json-section">
+          <details>
+            <summary>🔧 JSON 生データを表示</summary>
+            <pre class="result">{cameraCaptureResult}</pre>
+          </details>
+        </div>
+      {/if}
+
+      {#if hardwareStatus !== "未実行"}
+        <div class="result-json-section">
+          <details>
+            <summary>🔧 ハードウェア状態を表示</summary>
+            <pre class="result">{hardwareStatus}</pre>
+          </details>
+        </div>
+      {/if}
     </section>
   </section>
 

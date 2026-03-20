@@ -122,3 +122,18 @@ type DeviceServoAxisCalibration struct {
 	SoftStart           bool    `json:"soft_start"`
 	HomeDeg             float64 `json:"home_deg"`
 }
+
+// DeviceCameraCaptureResultPayload は device.camera.capture.result イベントのペイロードです（firmware -> server）。
+type DeviceCameraCaptureResultPayload struct {
+	RequestID           string `json:"request_id"`
+	OK                  bool   `json:"ok"`
+	Reason              string `json:"reason,omitempty"`
+	CaptureID           string `json:"capture_id,omitempty"`
+	CapturedAtMs        int64  `json:"captured_at_ms,omitempty"`
+	ImageBytes          int    `json:"image_bytes,omitempty"`
+	Width               int    `json:"width,omitempty"`
+	Height              int    `json:"height,omitempty"`
+	RequestedResolution string `json:"requested_resolution,omitempty"`
+	RequestedQuality    int    `json:"requested_quality,omitempty"`
+	CameraAvailable     bool   `json:"camera_available"`
+}

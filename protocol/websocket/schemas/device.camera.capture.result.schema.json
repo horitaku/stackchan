@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "device.camera.capture.result",
+  "description": "カメラ静止画取得結果イベント（firmware -> server）。device.camera.capture の request_id を mirror して返す。",
+  "type": "object",
+  "required": ["type", "timestamp", "session_id", "sequence", "version", "payload"],
+  "properties": {
+    "type":       { "const": "device.camera.capture.result" },
+    "timestamp":  { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence":   { "type": "integer", "minimum": 1 },
+    "version":    { "const": "1.0" },
+    "payload":    { "$ref": "#/definitions/DeviceCameraCaptureResultPayload" }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "DeviceCameraCaptureResultPayload": {
+      "type": "object",
+      "required": ["request_id", "ok", "camera_available"],
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "device.camera.capture の request_id"
+        },
+        "ok": {
+          "type": "boolean",
+          "description": "撮影成功可否"
+        },
+        "reason": {
+          "type": "string",
+          "description": "失敗理由または補足"
+        },
+        "capture_id": {
+          "type": "string",
+          "description": "firmware 内部の撮影ID"
+        },
+        "captured_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "firmware uptime 기준の撮影時刻"
+        },
+        "image_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "取得画像のバイト数"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "画像幅"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "画像高"
+        },
+        "requested_resolution": {
+          "type": "string",
+          "enum": ["qqvga", "qvga", "vga"],
+          "description": "要求解像度（正規化後）"
+        },
+        "requested_quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 63,
+          "description": "要求 quality（適用後）"
+        },
+        "camera_available": {
+          "type": "boolean",
+          "description": "返却時点のカメラ利用可否"
+        }
+      }
+    }
+  }
+}
